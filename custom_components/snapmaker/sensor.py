@@ -39,10 +39,9 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     device = hass.data[DOMAIN][entry.entry_id]["device"]
 
+    # Common sensors for all devices
     entities = [
         SnapmakerStatusSensor(coordinator, device),
-        SnapmakerNozzleTempSensor(coordinator, device),
-        SnapmakerNozzleTargetTempSensor(coordinator, device),
         SnapmakerBedTempSensor(coordinator, device),
         SnapmakerBedTargetTempSensor(coordinator, device),
         SnapmakerFileNameSensor(coordinator, device),
@@ -50,6 +49,24 @@ async def async_setup_entry(
         SnapmakerElapsedTimeSensor(coordinator, device),
         SnapmakerRemainingTimeSensor(coordinator, device),
     ]
+
+    # Add nozzle sensors based on extruder configuration
+    # Note: dual_extruder status is determined after first update
+    # So we'll add all possible sensors and they'll show appropriate values
+    if device.dual_extruder:
+        # Dual extruder configuration
+        entities.extend([
+            SnapmakerNozzle1TempSensor(coordinator, device),
+            SnapmakerNozzle1TargetTempSensor(coordinator, device),
+            SnapmakerNozzle2TempSensor(coordinator, device),
+            SnapmakerNozzle2TargetTempSensor(coordinator, device),
+        ])
+    else:
+        # Single nozzle configuration (default)
+        entities.extend([
+            SnapmakerNozzleTempSensor(coordinator, device),
+            SnapmakerNozzleTargetTempSensor(coordinator, device),
+        ])
 
     async_add_entities(entities)
 
@@ -238,3 +255,79 @@ class SnapmakerRemainingTimeSensor(SnapmakerSensorBase):
     def state(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("remaining_time", "00:00:00")
+
+
+class SnapmakerNozzle1TempSensor(SnapmakerSensorBase):
+    """Representation of a Snapmaker nozzle 1 temperature sensor (dual extruder)."""
+
+    def __init__(self, coordinator, device):
+        """Initialize the sensor."""
+        super().__init__(coordinator, device)
+        self._attr_name = "Nozzle 1 Temperature"
+        self._attr_unique_id = f"{self._device.host}_nozzle1_temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_icon = "mdi:thermometer"
+
+    @property
+    def native_value(self) -> float:
+        """Return the state of the sensor."""
+        return self._device.data.get("nozzle1_temperature", 0)
+
+
+class SnapmakerNozzle1TargetTempSensor(SnapmakerSensorBase):
+    """Representation of a Snapmaker nozzle 1 target temperature sensor (dual extruder)."""
+
+    def __init__(self, coordinator, device):
+        """Initialize the sensor."""
+        super().__init__(coordinator, device)
+        self._attr_name = "Nozzle 1 Target Temperature"
+        self._attr_unique_id = f"{self._device.host}_nozzle1_target_temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_icon = "mdi:thermometer"
+
+    @property
+    def native_value(self) -> float:
+        """Return the state of the sensor."""
+        return self._device.data.get("nozzle1_target_temperature", 0)
+
+
+class SnapmakerNozzle2TempSensor(SnapmakerSensorBase):
+    """Representation of a Snapmaker nozzle 2 temperature sensor (dual extruder)."""
+
+    def __init__(self, coordinator, device):
+        """Initialize the sensor."""
+        super().__init__(coordinator, device)
+        self._attr_name = "Nozzle 2 Temperature"
+        self._attr_unique_id = f"{self._device.host}_nozzle2_temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_icon = "mdi:thermometer"
+
+    @property
+    def native_value(self) -> float:
+        """Return the state of the sensor."""
+        return self._device.data.get("nozzle2_temperature", 0)
+
+
+class SnapmakerNozzle2TargetTempSensor(SnapmakerSensorBase):
+    """Representation of a Snapmaker nozzle 2 target temperature sensor (dual extruder)."""
+
+    def __init__(self, coordinator, device):
+        """Initialize the sensor."""
+        super().__init__(coordinator, device)
+        self._attr_name = "Nozzle 2 Target Temperature"
+        self._attr_unique_id = f"{self._device.host}_nozzle2_target_temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_icon = "mdi:thermometer"
+
+    @property
+    def native_value(self) -> float:
+        """Return the state of the sensor."""
+        return self._device.data.get("nozzle2_target_temperature", 0)

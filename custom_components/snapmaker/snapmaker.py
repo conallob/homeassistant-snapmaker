@@ -27,6 +27,7 @@ class SnapmakerDevice:
         self._available = False
         self._model = None
         self._status = "OFFLINE"
+        self._dual_extruder = False
 
     @property
     def host(self) -> str:
@@ -52,6 +53,11 @@ class SnapmakerDevice:
     def data(self) -> Dict[str, Any]:
         """Return the data of the device."""
         return self._data
+
+    @property
+    def dual_extruder(self) -> bool:
+        """Return True if device has dual extruder."""
+        return self._dual_extruder
 
     def update(self) -> Dict[str, Any]:
         """Update device data."""
@@ -196,8 +202,26 @@ class SnapmakerDevice:
 
             # Extract status data
             status = data.get("status")
-            nozzle_temp = data.get("nozzleTemperature", 0)
-            nozzle_target_temp = data.get("nozzleTargetTemperature", 0)
+
+            # Check for dual extruder configuration
+            # Dual extruders have nozzle1Temperature and nozzle2Temperature fields
+            has_nozzle1 = "nozzle1Temperature" in data
+            has_nozzle2 = "nozzle2Temperature" in data
+            self._dual_extruder = has_nozzle1 and has_nozzle2
+
+            # Extract temperature data based on configuration
+            if self._dual_extruder:
+                nozzle1_temp = data.get("nozzle1Temperature", 0)
+                nozzle1_target_temp = data.get("nozzle1TargetTemperature", 0)
+                nozzle2_temp = data.get("nozzle2Temperature", 0)
+                nozzle2_target_temp = data.get("nozzle2TargetTemperature", 0)
+            else:
+                # Single nozzle configuration
+                nozzle1_temp = data.get("nozzleTemperature", 0)
+                nozzle1_target_temp = data.get("nozzleTargetTemperature", 0)
+                nozzle2_temp = None
+                nozzle2_target_temp = None
+
             bed_temp = data.get("heatedBedTemperature", 0)
             bed_target_temp = data.get("heatedBedTargetTemperature", 0)
 
@@ -218,17 +242,31 @@ class SnapmakerDevice:
 
             # Update device data
             self._status = status
-            self._data.update({
+            update_dict = {
                 "status": status,
-                "nozzle_temperature": nozzle_temp,
-                "nozzle_target_temperature": nozzle_target_temp,
                 "heated_bed_temperature": bed_temp,
                 "heated_bed_target_temperature": bed_target_temp,
                 "file_name": file_name,
                 "progress": progress,
                 "elapsed_time": elapsed_time,
                 "remaining_time": remaining_time
-            })
+            }
+
+            # Add nozzle data based on configuration
+            if self._dual_extruder:
+                update_dict.update({
+                    "nozzle1_temperature": nozzle1_temp,
+                    "nozzle1_target_temperature": nozzle1_target_temp,
+                    "nozzle2_temperature": nozzle2_temp,
+                    "nozzle2_target_temperature": nozzle2_target_temp,
+                })
+            else:
+                update_dict.update({
+                    "nozzle_temperature": nozzle1_temp,
+                    "nozzle_target_temperature": nozzle1_target_temp,
+                })
+
+            self._data.update(update_dict)
         except Exception as err:
             _LOGGER.error("Error getting status from Snapmaker: %s", err)
             self._available = False
