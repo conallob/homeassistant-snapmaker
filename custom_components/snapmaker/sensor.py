@@ -10,9 +10,10 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
-    TEMP_CELSIUS,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
@@ -105,7 +106,7 @@ class SnapmakerNozzleTempSensor(SnapmakerSensorBase):
         self._attr_unique_id = f"{self._device.host}_nozzle_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = TEMP_CELSIUS
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_icon = "mdi:thermometer"
 
     @property
@@ -124,7 +125,7 @@ class SnapmakerNozzleTargetTempSensor(SnapmakerSensorBase):
         self._attr_unique_id = f"{self._device.host}_nozzle_target_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = TEMP_CELSIUS
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_icon = "mdi:thermometer"
 
     @property
@@ -143,7 +144,7 @@ class SnapmakerBedTempSensor(SnapmakerSensorBase):
         self._attr_unique_id = f"{self._device.host}_bed_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = TEMP_CELSIUS
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_icon = "mdi:thermometer"
 
     @property
@@ -162,7 +163,7 @@ class SnapmakerBedTargetTempSensor(SnapmakerSensorBase):
         self._attr_unique_id = f"{self._device.host}_bed_target_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = TEMP_CELSIUS
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_icon = "mdi:thermometer"
 
     @property
@@ -196,6 +197,7 @@ class SnapmakerProgressSensor(SnapmakerSensorBase):
         self._attr_name = "Progress"
         self._attr_unique_id = f"{self._device.host}_progress"
         self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:progress-check"
 
     @property
@@ -212,6 +214,7 @@ class SnapmakerElapsedTimeSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Elapsed Time"
         self._attr_unique_id = f"{self._device.host}_elapsed_time"
+        self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_icon = "mdi:clock-outline"
 
     @property
@@ -228,6 +231,7 @@ class SnapmakerRemainingTimeSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Remaining Time"
         self._attr_unique_id = f"{self._device.host}_remaining_time"
+        self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_icon = "mdi:clock-end"
 
     @property

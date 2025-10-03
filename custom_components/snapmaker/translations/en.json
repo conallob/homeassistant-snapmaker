@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Snapmaker",
+        "description": "Set up your Snapmaker 3D printer integration.",
+        "data": {
+          "host": "IP Address"
+        }
+      },
+      "confirm": {
+        "title": "Confirm Snapmaker",
+        "description": "Do you want to set up the Snapmaker at {host}?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Snapmaker. Please check the IP address and make sure the printer is powered on.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Snapmaker device is already configured."
+    }
+  }
+}
