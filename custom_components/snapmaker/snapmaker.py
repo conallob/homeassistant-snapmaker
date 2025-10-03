@@ -172,7 +172,27 @@ class SnapmakerDevice:
         try:
             url = f"http://{self._host}:8080/api/v1/status?token={self._token}"
             response = requests.get(url, timeout=5)
-            data = json.loads(response.text)
+
+            # Check if response is valid
+            if not response.text or response.text.strip() == "":
+                _LOGGER.error("Empty response from Snapmaker status API")
+                self._available = False
+                self._status = "OFFLINE"
+                return
+
+            # Check for HTTP errors
+            response.raise_for_status()
+
+            # Try to parse JSON
+            try:
+                data = json.loads(response.text)
+            except json.JSONDecodeError as json_err:
+                _LOGGER.error(
+                    "Invalid JSON response from Snapmaker: %s. Response text: %s",
+                    json_err, response.text[:200])
+                self._available = False
+                self._status = "OFFLINE"
+                return
 
             # Extract status data
             status = data.get("status")
