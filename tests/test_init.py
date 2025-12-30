@@ -36,6 +36,8 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test setup from a config entry."""
+        # Initialize the integration first
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         result = await async_setup_entry(hass, config_entry)
@@ -49,6 +51,7 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test that setup creates a coordinator."""
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         await async_setup_entry(hass, config_entry)
@@ -61,6 +64,7 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test unloading a config entry."""
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         await async_setup_entry(hass, config_entry)
@@ -74,6 +78,7 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test coordinator update method."""
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         await async_setup_entry(hass, config_entry)
@@ -88,6 +93,7 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test coordinator update with failure."""
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         await async_setup_entry(hass, config_entry)
@@ -106,6 +112,7 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test coordinator update interval is set correctly."""
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         await async_setup_entry(hass, config_entry)
@@ -117,6 +124,7 @@ class TestInit:
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
     ):
         """Test that device instance is stored in hass.data."""
+        await async_setup(hass, {})
         config_entry.add_to_hass(hass)
 
         await async_setup_entry(hass, config_entry)

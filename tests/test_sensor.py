@@ -58,6 +58,7 @@ class TestSensorPlatform:
             data={CONF_HOST: "192.168.1.100"},
             unique_id="192.168.1.100",
         )
+        config_entry.add_to_hass(hass)
 
         mock_snapmaker_device.return_value.dual_extruder = False
         hass.data[DOMAIN] = {
@@ -92,6 +93,7 @@ class TestSensorPlatform:
             data={CONF_HOST: "192.168.1.100"},
             unique_id="192.168.1.100",
         )
+        config_entry.add_to_hass(hass)
 
         mock_snapmaker_device.return_value.dual_extruder = True
         hass.data[DOMAIN] = {
