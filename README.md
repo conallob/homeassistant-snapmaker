@@ -1,4 +1,8 @@
 # homeassistant-snapmaker
+
+[![CI](https://github.com/conallob/homeassistant-snapmaker/actions/workflows/ci.yml/badge.svg)](https://github.com/conallob/homeassistant-snapmaker/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/conallob/homeassistant-snapmaker/branch/main/graph/badge.svg)](https://codecov.io/gh/conallob/homeassistant-snapmaker)
+
 A home-assistant.io integration for interacting with a Snapmaker 3D printer
 
 ## Overview
@@ -48,6 +52,33 @@ provide the IP address of your Snapmaker device.
   network as your Home Assistant instance
 - Check that port 20054 (UDP) is open for device discovery
 - Verify that port 8080 (TCP) is accessible for API communication
+
+## Development
+
+### Running Tests
+
+This integration includes a comprehensive test suite. To run the tests:
+
+```bash
+# Install test dependencies
+pip install -r requirements_test.txt
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=custom_components.snapmaker --cov-report=html
+```
+
+See [tests/README.md](tests/README.md) for more details on the test suite.
+
+### Continuous Integration
+
+The project uses GitHub Actions for CI/CD:
+- Automated testing on Python 3.11 and 3.12
+- Code quality checks (black, isort, flake8)
+- Test coverage reporting via Codecov
+- Validation of manifest and HACS configuration files
 
 ## Credits
 
