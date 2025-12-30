@@ -74,6 +74,24 @@ class SnapmakerDevice:
 
         return self._data
 
+    def _set_offline(self) -> None:
+        """Set device to offline state with default values."""
+        self._available = False
+        self._status = "OFFLINE"
+        self._data = {
+            "ip": self._host,
+            "model": self._model or "N/A",
+            "status": "OFFLINE",
+            "nozzle_temperature": 0,
+            "nozzle_target_temperature": 0,
+            "heated_bed_temperature": 0,
+            "heated_bed_target_temperature": 0,
+            "file_name": "N/A",
+            "progress": 0,
+            "elapsed_time": "00:00:00",
+            "remaining_time": "00:00:00"
+        }
+
     def _check_online(self) -> None:
         """Check if device is online via discovery."""
         udp_socket = socket.socket(family=socket.AF_INET,
@@ -81,93 +99,80 @@ class SnapmakerDevice:
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         udp_socket.settimeout(SOCKET_TIMEOUT)
 
-        retry_count = 0
-        while retry_count < MAX_RETRIES:
-            try:
-                # Send discovery message to broadcast address
-                udp_socket.sendto(DISCOVER_MESSAGE, ("255.255.255.255", DISCOVER_PORT))
+        try:
+            retry_count = 0
+            while retry_count < MAX_RETRIES:
+                try:
+                    # Send discovery message to broadcast address
+                    udp_socket.sendto(DISCOVER_MESSAGE, ("255.255.255.255", DISCOVER_PORT))
 
-                # Wait for responses and filter for our target host
-                found = False
-                start_time = socket.time() if hasattr(socket, 'time') else None
+                    # Wait for responses and filter for our target host
+                    found = False
 
-                while True:
-                    try:
-                        reply, addr = udp_socket.recvfrom(BUFFER_SIZE)
+                    while True:
+                        try:
+                            reply, addr = udp_socket.recvfrom(BUFFER_SIZE)
 
-                        # Parse response
-                        elements = str(reply).split('|')
-                        sn_ip = (elements[0]).replace("'", "")
-                        sn_model = (elements[1]).replace("'", "")
-                        sn_status = (elements[2]).replace("'", "")
+                            # Parse response - decode bytes properly
+                            try:
+                                response_str = reply.decode('utf-8')
+                                elements = response_str.split('|')
 
-                        _, sn_ip_val = sn_ip.split('@')
-                        _, sn_model_val = sn_model.split(':')
-                        _, sn_status_val = sn_status.split(':')
+                                if len(elements) < 3:
+                                    _LOGGER.warning("Invalid discovery response format: %s", response_str)
+                                    continue
 
-                        # Check if this response is from our target host
-                        if sn_ip_val == self._host or addr[0] == self._host:
-                            # Update device info
-                            self._available = True
-                            self._model = sn_model_val
-                            self._status = sn_status_val
-                            self._data = {
-                                "ip": sn_ip_val,
-                                "model": sn_model_val,
-                                "status": sn_status_val
-                            }
-                            found = True
+                                sn_ip = elements[0]
+                                sn_model = elements[1]
+                                sn_status = elements[2]
+
+                                # Parse fields with validation
+                                if '@' not in sn_ip or ':' not in sn_model or ':' not in sn_status:
+                                    _LOGGER.warning("Malformed discovery response: %s", response_str)
+                                    continue
+
+                                _, sn_ip_val = sn_ip.split('@', 1)
+                                _, sn_model_val = sn_model.split(':', 1)
+                                _, sn_status_val = sn_status.split(':', 1)
+
+                                # Check if this response is from our target host
+                                if sn_ip_val == self._host or addr[0] == self._host:
+                                    # Update device info
+                                    self._available = True
+                                    self._model = sn_model_val
+                                    self._status = sn_status_val
+                                    self._data = {
+                                        "ip": sn_ip_val,
+                                        "model": sn_model_val,
+                                        "status": sn_status_val
+                                    }
+                                    found = True
+                                    break
+                            except (UnicodeDecodeError, ValueError) as parse_err:
+                                _LOGGER.warning("Failed to parse discovery response: %s", parse_err)
+                                continue
+
+                        except socket.timeout:
+                            # No more responses in this iteration
                             break
-                    except socket.timeout:
-                        # No more responses
+
+                    if found:
                         break
 
-                if found:
-                    break
+                    # If we didn't find our device, retry
+                    retry_count += 1
 
-                # If we didn't find our device, retry
-                retry_count += 1
-                if retry_count >= MAX_RETRIES:
-                    self._available = False
-                    self._status = "OFFLINE"
-                    self._data = {
-                        "ip": self._host,
-                        "model": self._model or "N/A",
-                        "status": "OFFLINE",
-                        "nozzle_temperature": 0,
-                        "nozzle_target_temperature": 0,
-                        "heated_bed_temperature": 0,
-                        "heated_bed_target_temperature": 0,
-                        "file_name": "N/A",
-                        "progress": 0,
-                        "elapsed_time": "00:00:00",
-                        "remaining_time": "00:00:00"
-                    }
-            except socket.timeout:
-                retry_count += 1
-                if retry_count >= MAX_RETRIES:
-                    self._available = False
-                    self._status = "OFFLINE"
-                    self._data = {
-                        "ip": self._host,
-                        "model": self._model or "N/A",
-                        "status": "OFFLINE",
-                        "nozzle_temperature": 0,
-                        "nozzle_target_temperature": 0,
-                        "heated_bed_temperature": 0,
-                        "heated_bed_target_temperature": 0,
-                        "file_name": "N/A",
-                        "progress": 0,
-                        "elapsed_time": "00:00:00",
-                        "remaining_time": "00:00:00"
-                    }
-            except Exception as err:
-                _LOGGER.error("Error checking Snapmaker status: %s", err)
-                self._available = False
-                self._status = "OFFLINE"
-                break
+                except Exception as err:
+                    _LOGGER.error("Error checking Snapmaker status: %s", err)
+                    retry_count += 1
 
-        udp_socket.close()
+            # If we exhausted all retries without finding the device, mark as offline
+            if retry_count >= MAX_RETRIES:
+                self._set_offline()
+
+        finally:
+            # Always close the socket, even if an exception occurred
+            udp_socket.close()
 
     def _get_token(self) -> Optional[str]:
         """Get token from Snapmaker device."""
@@ -308,13 +313,12 @@ class SnapmakerDevice:
     def discover() -> list:
         """Discover Snapmaker devices on the network."""
         devices = []
+        udp_socket = socket.socket(family=socket.AF_INET,
+                                   type=socket.SOCK_DGRAM)
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        udp_socket.settimeout(SOCKET_TIMEOUT)
 
         try:
-            udp_socket = socket.socket(family=socket.AF_INET,
-                                       type=socket.SOCK_DGRAM)
-            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            udp_socket.settimeout(SOCKET_TIMEOUT)
-
             # Send discovery message to broadcast address
             udp_socket.sendto(DISCOVER_MESSAGE,
                               ("255.255.255.255", DISCOVER_PORT))
@@ -324,25 +328,44 @@ class SnapmakerDevice:
                 while True:
                     reply, addr = udp_socket.recvfrom(BUFFER_SIZE)
 
-                    # Parse response
-                    elements = str(reply).split('|')
-                    sn_ip = (elements[0]).replace("'", "")
-                    sn_model = (elements[1]).replace("'", "")
-                    sn_status = (elements[2]).replace("'", "")
+                    # Parse response - decode bytes properly
+                    try:
+                        response_str = reply.decode('utf-8')
+                        elements = response_str.split('|')
 
-                    _, sn_ip_val = sn_ip.split('@')
-                    _, sn_model_val = sn_model.split(':')
-                    _, sn_status_val = sn_status.split(':')
+                        if len(elements) < 3:
+                            _LOGGER.warning("Invalid discovery response format: %s", response_str)
+                            continue
 
-                    devices.append({
-                        "host": sn_ip_val,
-                        "model": sn_model_val,
-                        "status": sn_status_val
-                    })
+                        sn_ip = elements[0]
+                        sn_model = elements[1]
+                        sn_status = elements[2]
+
+                        # Parse fields with validation
+                        if '@' not in sn_ip or ':' not in sn_model or ':' not in sn_status:
+                            _LOGGER.warning("Malformed discovery response: %s", response_str)
+                            continue
+
+                        _, sn_ip_val = sn_ip.split('@', 1)
+                        _, sn_model_val = sn_model.split(':', 1)
+                        _, sn_status_val = sn_status.split(':', 1)
+
+                        devices.append({
+                            "host": sn_ip_val,
+                            "model": sn_model_val,
+                            "status": sn_status_val
+                        })
+                    except (UnicodeDecodeError, ValueError) as parse_err:
+                        _LOGGER.warning("Failed to parse discovery response: %s", parse_err)
+                        continue
+
             except socket.timeout:
                 # No more responses
                 pass
         except Exception as err:
             _LOGGER.error("Error discovering Snapmaker devices: %s", err)
+        finally:
+            # Always close the socket
+            udp_socket.close()
 
         return devices

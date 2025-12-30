@@ -52,7 +52,7 @@ def mock_socket():
     with patch("custom_components.snapmaker.snapmaker.socket.socket") as mock:
         socket_instance = MagicMock()
         socket_instance.recvfrom.return_value = (
-            b"b'IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE'",
+            b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE",
             ("192.168.1.100", 20054),
         )
         mock.return_value = socket_instance

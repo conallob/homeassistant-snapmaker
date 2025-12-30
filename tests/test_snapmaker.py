@@ -63,11 +63,11 @@ class TestSnapmakerDevice:
         # First response is from a different device
         mock_socket.recvfrom.side_effect = [
             (
-                b"b'IP@192.168.1.99|Model:Snapmaker A150|Status:IDLE'",
+                b"IP@192.168.1.99|Model:Snapmaker A150|Status:IDLE",
                 ("192.168.1.99", 20054),
             ),
             (
-                b"b'IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE'",
+                b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE",
                 ("192.168.1.100", 20054),
             ),
         ]
@@ -205,11 +205,11 @@ class TestSnapmakerDevice:
         """Test static discover method."""
         mock_socket.recvfrom.side_effect = [
             (
-                b"b'IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE'",
+                b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE",
                 ("192.168.1.100", 20054),
             ),
             (
-                b"b'IP@192.168.1.101|Model:Snapmaker A250|Status:RUNNING'",
+                b"IP@192.168.1.101|Model:Snapmaker A250|Status:RUNNING",
                 ("192.168.1.101", 20054),
             ),
             socket.timeout(),
@@ -241,3 +241,72 @@ class TestSnapmakerDevice:
             devices = SnapmakerDevice.discover()
 
             assert len(devices) == 0
+
+    def test_set_offline(self):
+        """Test _set_offline method."""
+        device = SnapmakerDevice("192.168.1.100")
+        device._model = "Snapmaker A350"
+        device._set_offline()
+
+        assert device.available is False
+        assert device.status == "OFFLINE"
+        assert device.data["status"] == "OFFLINE"
+        assert device.data["ip"] == "192.168.1.100"
+        assert device.data["model"] == "Snapmaker A350"
+        assert device.data["nozzle_temperature"] == 0
+        assert device.data["file_name"] == "N/A"
+
+    def test_check_online_malformed_response(self, mock_socket):
+        """Test _check_online with malformed response."""
+        mock_socket.recvfrom.side_effect = [
+            (b"INVALID_RESPONSE", ("192.168.1.100", 20054)),
+            socket.timeout(),
+        ]
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._check_online()
+
+        # Should mark as offline due to malformed response
+        assert device.available is False
+        assert device.status == "OFFLINE"
+
+    def test_check_online_invalid_utf8(self, mock_socket):
+        """Test _check_online with invalid UTF-8 bytes."""
+        mock_socket.recvfrom.side_effect = [
+            (b"\xff\xfe\x00\x00", ("192.168.1.100", 20054)),
+            socket.timeout(),
+        ]
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._check_online()
+
+        # Should handle decode error gracefully
+        assert device.available is False
+        assert device.status == "OFFLINE"
+
+    def test_discover_malformed_response(self, mock_socket):
+        """Test discover with malformed response."""
+        mock_socket.recvfrom.side_effect = [
+            (b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE", ("192.168.1.100", 20054)),
+            (b"INVALID", ("192.168.1.101", 20054)),
+            socket.timeout(),
+        ]
+
+        devices = SnapmakerDevice.discover()
+
+        # Should only include valid device
+        assert len(devices) == 1
+        assert devices[0]["host"] == "192.168.1.100"
+
+    def test_check_online_socket_closed_on_exception(self):
+        """Test that socket is closed even when exception occurs."""
+        with patch("custom_components.snapmaker.snapmaker.socket.socket") as mock_socket_class:
+            socket_instance = MagicMock()
+            socket_instance.sendto.side_effect = Exception("Send error")
+            mock_socket_class.return_value = socket_instance
+
+            device = SnapmakerDevice("192.168.1.100")
+            device._check_online()
+
+            # Socket should be closed even though exception occurred
+            socket_instance.close.assert_called_once()
