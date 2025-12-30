@@ -1,11 +1,13 @@
 """Tests for the Snapmaker integration initialization."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.snapmaker import (
     async_setup,
     async_setup_entry,

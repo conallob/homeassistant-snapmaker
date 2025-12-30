@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, Callable, Dict, List, Optional
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -24,7 +26,6 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from typing import Any, Callable, Dict, List, Optional
 
 from .const import DOMAIN
 

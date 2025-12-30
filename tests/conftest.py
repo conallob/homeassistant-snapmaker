@@ -1,8 +1,9 @@
 """Common fixtures for Snapmaker tests."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
 from homeassistant.const import CONF_HOST
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 

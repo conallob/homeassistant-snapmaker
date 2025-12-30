@@ -1,11 +1,13 @@
 """Tests for the Snapmaker config flow."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResultType
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.snapmaker.const import DOMAIN
 
 

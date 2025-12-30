@@ -1,25 +1,27 @@
 """Tests for the Snapmaker sensor platform."""
 
-import pytest
 from unittest.mock import MagicMock, patch
-from homeassistant.const import CONF_HOST, UnitOfTemperature, PERCENTAGE
+
+from homeassistant.const import CONF_HOST, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.snapmaker.const import DOMAIN
 from custom_components.snapmaker.sensor import (
-    async_setup_entry,
-    SnapmakerStatusSensor,
-    SnapmakerNozzleTempSensor,
-    SnapmakerNozzleTargetTempSensor,
-    SnapmakerBedTempSensor,
     SnapmakerBedTargetTempSensor,
-    SnapmakerFileNameSensor,
-    SnapmakerProgressSensor,
+    SnapmakerBedTempSensor,
     SnapmakerElapsedTimeSensor,
-    SnapmakerRemainingTimeSensor,
+    SnapmakerFileNameSensor,
     SnapmakerNozzle1TempSensor,
     SnapmakerNozzle2TempSensor,
+    SnapmakerNozzleTargetTempSensor,
+    SnapmakerNozzleTempSensor,
+    SnapmakerProgressSensor,
+    SnapmakerRemainingTimeSensor,
+    SnapmakerStatusSensor,
+    async_setup_entry,
 )
 
 

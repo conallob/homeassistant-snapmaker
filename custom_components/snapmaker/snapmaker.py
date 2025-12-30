@@ -1,12 +1,13 @@
 """Snapmaker device communication module."""
 
+from datetime import timedelta
 import ipaddress
 import json
 import logging
-import requests
 import socket
-from datetime import timedelta
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import requests
 
 _LOGGER = logging.getLogger(__name__)
 

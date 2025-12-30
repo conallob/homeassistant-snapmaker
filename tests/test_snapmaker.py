@@ -1,8 +1,10 @@
 """Tests for the Snapmaker device module."""
 
-import pytest
 import socket
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
 from custom_components.snapmaker.snapmaker import SnapmakerDevice
 
 

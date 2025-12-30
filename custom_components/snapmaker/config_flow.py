@@ -1,12 +1,13 @@
 """Config flow for Snapmaker integration."""
 
 import logging
-import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.components import dhcp
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
+import voluptuous as vol
 
 from .const import DOMAIN
 from .snapmaker import SnapmakerDevice
