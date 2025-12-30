@@ -34,11 +34,9 @@ def mock_snapmaker_device():
     with (
         patch("custom_components.snapmaker.SnapmakerDevice") as mock_init,
         patch("custom_components.snapmaker.config_flow.SnapmakerDevice") as mock_config,
-        patch("custom_components.snapmaker.sensor.SnapmakerDevice") as mock_sensor,
     ):
         mock_init.return_value = device
         mock_config.return_value = device
-        mock_sensor.return_value = device
         yield mock_init
 
 
