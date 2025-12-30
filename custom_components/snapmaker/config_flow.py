@@ -2,10 +2,9 @@
 
 import logging
 
-import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
+import voluptuous as vol
 
 from .const import DOMAIN
 from .snapmaker import SnapmakerDevice

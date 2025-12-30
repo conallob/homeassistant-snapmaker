@@ -1,9 +1,9 @@
 """Snapmaker device communication module."""
 
+from datetime import timedelta
 import json
 import logging
 import socket
-from datetime import timedelta
 from typing import Any, Dict, Optional
 
 import requests

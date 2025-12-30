@@ -1,8 +1,8 @@
 """Tests for the Snapmaker integration initialization."""
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.snapmaker import (

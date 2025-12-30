@@ -2,10 +2,10 @@
 
 from unittest.mock import MagicMock
 
-import pytest
 from homeassistant.const import CONF_HOST, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.snapmaker.const import DOMAIN
