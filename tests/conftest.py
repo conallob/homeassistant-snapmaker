@@ -8,37 +8,43 @@ import pytest
 
 @pytest.fixture
 def mock_snapmaker_device():
-    """Mock SnapmakerDevice."""
-    with patch("custom_components.snapmaker.snapmaker.SnapmakerDevice") as mock:
-        device = MagicMock()
-        device.host = "192.168.1.100"
-        device.model = "Snapmaker A350"
-        device.status = "IDLE"
-        device.available = True
-        device.dual_extruder = False
-        device.data = {
-            "ip": "192.168.1.100",
-            "model": "Snapmaker A350",
-            "status": "IDLE",
-            "nozzle_temperature": 25.0,
-            "nozzle_target_temperature": 0.0,
-            "heated_bed_temperature": 23.0,
-            "heated_bed_target_temperature": 0.0,
-            "file_name": "N/A",
-            "progress": 0,
-            "elapsed_time": "00:00:00",
-            "remaining_time": "00:00:00",
-        }
-        device.update.return_value = device.data
-        mock.return_value = device
-        yield mock
+    """Mock SnapmakerDevice in all import locations."""
+    device = MagicMock()
+    device.host = "192.168.1.100"
+    device.model = "Snapmaker A350"
+    device.status = "IDLE"
+    device.available = True
+    device.dual_extruder = False
+    device.data = {
+        "ip": "192.168.1.100",
+        "model": "Snapmaker A350",
+        "status": "IDLE",
+        "nozzle_temperature": 25.0,
+        "nozzle_target_temperature": 0.0,
+        "heated_bed_temperature": 23.0,
+        "heated_bed_target_temperature": 0.0,
+        "file_name": "N/A",
+        "progress": 0,
+        "elapsed_time": "00:00:00",
+        "remaining_time": "00:00:00",
+    }
+    device.update.return_value = device.data
+
+    # Patch where SnapmakerDevice is imported and used
+    with patch("custom_components.snapmaker.SnapmakerDevice") as mock_init, \
+         patch("custom_components.snapmaker.config_flow.SnapmakerDevice") as mock_config, \
+         patch("custom_components.snapmaker.sensor.SnapmakerDevice") as mock_sensor:
+        mock_init.return_value = device
+        mock_config.return_value = device
+        mock_sensor.return_value = device
+        yield mock_init
 
 
 @pytest.fixture
 def mock_discovery():
     """Mock SnapmakerDevice.discover."""
     with patch(
-        "custom_components.snapmaker.snapmaker.SnapmakerDevice.discover"
+        "custom_components.snapmaker.config_flow.SnapmakerDevice.discover"
     ) as mock:
         mock.return_value = [
             {
