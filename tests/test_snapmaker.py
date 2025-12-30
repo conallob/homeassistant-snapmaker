@@ -53,11 +53,8 @@ class TestSnapmakerDevice:
         assert device.status == "IDLE"
         assert device.data["ip"] == "192.168.1.100"
 
-        # Verify broadcast message was sent
-        mock_socket.sendto.assert_called()
-        call_args = mock_socket.sendto.call_args[0]
-        assert call_args[0] == b"discover"
-        assert call_args[1] == ("255.255.255.255", 20054)
+        # Verify broadcast message was sent with correct arguments
+        mock_socket.sendto.assert_called_with(b"discover", ("255.255.255.255", 20054))
 
     def test_check_online_filters_wrong_device(self, mock_socket):
         """Test that _check_online filters responses from wrong devices."""
