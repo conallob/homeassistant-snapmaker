@@ -29,6 +29,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
+          cache-dependency-path: 'requirements_test.txt'
 
       - name: Install dependencies
         run: |
@@ -59,7 +60,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: 'pip'
 
       - name: Install linting tools
         run: |
