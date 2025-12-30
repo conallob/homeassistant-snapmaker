@@ -4,6 +4,7 @@ from datetime import timedelta
 import json
 import logging
 import socket
+import time
 from typing import Any, Dict, Optional
 
 import requests
@@ -15,6 +16,7 @@ DISCOVER_PORT = 20054
 DISCOVER_MESSAGE = b"discover"
 SOCKET_TIMEOUT = 1.0  # Seconds to wait for UDP responses
 MAX_RETRIES = 5  # Number of discovery attempts before marking device offline
+RETRY_DELAY = 0.5  # Seconds to wait between discovery retry attempts
 BUFFER_SIZE = 1024  # UDP receive buffer size in bytes
 API_TIMEOUT = 5  # Seconds to wait for HTTP API responses
 
@@ -182,8 +184,10 @@ class SnapmakerDevice:
                     if found:
                         break
 
-                    # If we didn't find our device, retry
+                    # If we didn't find our device, retry after a brief delay
                     retry_count += 1
+                    if retry_count < MAX_RETRIES:
+                        time.sleep(RETRY_DELAY)
 
                 except Exception as err:
                     _LOGGER.error(
@@ -193,6 +197,8 @@ class SnapmakerDevice:
                         err,
                     )
                     retry_count += 1
+                    if retry_count < MAX_RETRIES:
+                        time.sleep(RETRY_DELAY)
 
             # If we exhausted all retries without finding the device, mark as offline
             if retry_count >= MAX_RETRIES:
@@ -208,7 +214,15 @@ class SnapmakerDevice:
             udp_socket.close()
 
     def _get_token(self) -> Optional[str]:
-        """Get token from Snapmaker device."""
+        """Get authentication token from Snapmaker device.
+
+        Implements a two-step token acquisition process:
+        1. POST to /api/v1/connect to request a token
+        2. POST the received token back to validate it
+
+        Returns:
+            Optional[str]: Authentication token if successful, None otherwise
+        """
         try:
             url = f"http://{self._host}:8080/api/v1/connect"
 
@@ -364,11 +378,13 @@ class SnapmakerDevice:
     def discover() -> list:
         """Discover Snapmaker devices on the network."""
         devices = []
-        udp_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        udp_socket.settimeout(SOCKET_TIMEOUT)
+        udp_socket = None
 
         try:
+            # Create and configure socket inside try block to ensure cleanup
+            udp_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            udp_socket.settimeout(SOCKET_TIMEOUT)
             # Send discovery message to broadcast address
             udp_socket.sendto(DISCOVER_MESSAGE, ("255.255.255.255", DISCOVER_PORT))
 
@@ -427,7 +443,8 @@ class SnapmakerDevice:
         except Exception as err:
             _LOGGER.error("Error discovering Snapmaker devices: %s", err)
         finally:
-            # Always close the socket
-            udp_socket.close()
+            # Always close the socket if it was created
+            if udp_socket is not None:
+                udp_socket.close()
 
         return devices
