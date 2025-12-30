@@ -1,4 +1,5 @@
 """Tests for the Snapmaker sensor platform."""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from homeassistant.const import CONF_HOST, UnitOfTemperature, PERCENTAGE
@@ -65,6 +66,7 @@ class TestSensorPlatform:
         }
 
         entities = []
+
         async def mock_add_entities(new_entities):
             entities.extend(new_entities)
 
@@ -98,6 +100,7 @@ class TestSensorPlatform:
         }
 
         entities = []
+
         async def mock_add_entities(new_entities):
             entities.extend(new_entities)
 
@@ -114,7 +117,9 @@ class TestSensorEntities:
 
     def test_status_sensor(self, mock_coordinator, mock_snapmaker_device):
         """Test status sensor."""
-        sensor = SnapmakerStatusSensor(mock_coordinator, mock_snapmaker_device.return_value)
+        sensor = SnapmakerStatusSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
 
         assert sensor.name == "Status"
         assert sensor.unique_id == "192.168.1.100_status"

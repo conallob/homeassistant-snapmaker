@@ -1,4 +1,5 @@
 """Common fixtures for Snapmaker tests."""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from homeassistant.const import CONF_HOST
@@ -36,7 +37,9 @@ def mock_snapmaker_device():
 @pytest.fixture
 def mock_discovery():
     """Mock SnapmakerDevice.discover."""
-    with patch("custom_components.snapmaker.snapmaker.SnapmakerDevice.discover") as mock:
+    with patch(
+        "custom_components.snapmaker.snapmaker.SnapmakerDevice.discover"
+    ) as mock:
         mock.return_value = [
             {
                 "host": "192.168.1.100",

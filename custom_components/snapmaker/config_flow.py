@@ -1,4 +1,5 @@
 """Config flow for Snapmaker integration."""
+
 import logging
 import voluptuous as vol
 from homeassistant import config_entries
@@ -32,8 +33,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate the connection
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(
-                    snapmaker.update)
+                result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
                     return self.async_create_entry(
                         title=f"Snapmaker {snapmaker.model or host}",
@@ -89,8 +89,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate the connection again
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(
-                    snapmaker.update)
+                result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
                     return self.async_create_entry(
                         title=f"Snapmaker {snapmaker.model or host}",
@@ -123,7 +122,8 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Set discovered device for confirmation
         self.context["host"] = host
         self.context["title_placeholders"] = {
-            "model": discovery_info.get("model", "Unknown")}
+            "model": discovery_info.get("model", "Unknown")
+        }
 
         return await self.async_step_confirm()
 
@@ -140,8 +140,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Discover devices
-        devices = await self.hass.async_add_executor_job(
-            SnapmakerDevice.discover)
+        devices = await self.hass.async_add_executor_job(SnapmakerDevice.discover)
 
         if not devices:
             return self.async_abort(reason="no_devices_found")
@@ -151,8 +150,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Create device selection schema
         devices_options = {
-            device[
-                "host"]: f"{device['model']} ({device['host']}) - {device['status']}"
+            device["host"]: f"{device['model']} ({device['host']}) - {device['status']}"
             for device in devices
         }
 

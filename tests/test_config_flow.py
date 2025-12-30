@@ -1,4 +1,5 @@
 """Tests for the Snapmaker config flow."""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from homeassistant import config_entries
@@ -20,7 +21,9 @@ def mock_setup_entry():
 class TestConfigFlow:
     """Test the config flow."""
 
-    async def test_user_flow_success(self, hass, mock_snapmaker_device, mock_setup_entry):
+    async def test_user_flow_success(
+        self, hass, mock_snapmaker_device, mock_setup_entry
+    ):
         """Test successful user configuration."""
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -99,7 +102,9 @@ class TestConfigFlow:
         assert result["type"] == FlowResultType.ABORT
         assert result["reason"] == "already_configured"
 
-    async def test_dhcp_flow_success(self, hass, mock_snapmaker_device, mock_setup_entry):
+    async def test_dhcp_flow_success(
+        self, hass, mock_snapmaker_device, mock_setup_entry
+    ):
         """Test DHCP discovery flow."""
         discovery_info = MagicMock()
         discovery_info.ip = "192.168.1.100"

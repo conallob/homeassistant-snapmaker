@@ -1,4 +1,5 @@
 """Tests for the Snapmaker device module."""
+
 import pytest
 import socket
 from unittest.mock import MagicMock, patch, call
@@ -110,7 +111,7 @@ class TestSnapmakerDevice:
 
     def test_get_token_no_token_in_response(self, mock_requests):
         """Test token retrieval when no token in response."""
-        mock_requests.post.return_value.text = '{}'
+        mock_requests.post.return_value.text = "{}"
 
         device = SnapmakerDevice("192.168.1.100")
         token = device._get_token()
@@ -235,7 +236,9 @@ class TestSnapmakerDevice:
 
     def test_discover_exception(self):
         """Test discover with exception."""
-        with patch("custom_components.snapmaker.snapmaker.socket.socket") as mock_socket_class:
+        with patch(
+            "custom_components.snapmaker.snapmaker.socket.socket"
+        ) as mock_socket_class:
             socket_instance = MagicMock()
             socket_instance.sendto.side_effect = Exception("Socket error")
             mock_socket_class.return_value = socket_instance
@@ -291,7 +294,10 @@ class TestSnapmakerDevice:
     def test_discover_malformed_response(self, mock_socket):
         """Test discover with malformed response."""
         mock_socket.recvfrom.side_effect = [
-            (b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE", ("192.168.1.100", 20054)),
+            (
+                b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE",
+                ("192.168.1.100", 20054),
+            ),
             (b"INVALID", ("192.168.1.101", 20054)),
             socket.timeout(),
         ]
@@ -304,7 +310,9 @@ class TestSnapmakerDevice:
 
     def test_check_online_socket_closed_on_exception(self):
         """Test that socket is closed even when exception occurs."""
-        with patch("custom_components.snapmaker.snapmaker.socket.socket") as mock_socket_class:
+        with patch(
+            "custom_components.snapmaker.snapmaker.socket.socket"
+        ) as mock_socket_class:
             socket_instance = MagicMock()
             socket_instance.sendto.side_effect = Exception("Send error")
             mock_socket_class.return_value = socket_instance
