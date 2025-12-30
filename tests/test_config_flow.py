@@ -143,15 +143,23 @@ class TestConfigFlow:
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
         """Test confirmation flow success."""
+        # Start with discovery which leads to confirm step
+        discovery_info = {
+            "host": "192.168.1.100",
+            "model": "Snapmaker A350",
+        }
+
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
-            context={"source": config_entries.SOURCE_USER, "host": "192.168.1.100"},
+            context={"source": "discovery"},
+            data=discovery_info,
         )
 
-        # Manually set context as it would be in real flow
-        flow = hass.config_entries.flow._progress[result["flow_id"]]
-        flow.context["host"] = "192.168.1.100"
+        # Should show confirm form
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "confirm"
 
+        # Now confirm the setup
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {},
@@ -164,15 +172,24 @@ class TestConfigFlow:
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
         """Test confirmation flow with connection error."""
-        mock_snapmaker_device.return_value.available = False
+        # Start with discovery which leads to confirm step
+        discovery_info = {
+            "host": "192.168.1.100",
+            "model": "Snapmaker A350",
+        }
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
-            context={"source": config_entries.SOURCE_USER, "host": "192.168.1.100"},
+            context={"source": "discovery"},
+            data=discovery_info,
         )
 
-        flow = hass.config_entries.flow._progress[result["flow_id"]]
-        flow.context["host"] = "192.168.1.100"
+        # Should show confirm form
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "confirm"
+
+        # Now try to confirm but device is unavailable
+        mock_snapmaker_device.return_value.available = False
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -197,7 +214,7 @@ class TestConfigFlow:
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "confirm"
-        assert result["description_placeholders"] == {"model": "Snapmaker A350"}
+        assert result["description_placeholders"] == {"host": "192.168.1.100"}
 
     async def test_discovery_flow_no_data(self, hass, mock_setup_entry):
         """Test discovery flow with no data."""
