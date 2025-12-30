@@ -1,10 +1,10 @@
 """Tests for the Snapmaker sensor platform."""
 import pytest
 from unittest.mock import MagicMock, patch
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, UnitOfTemperature, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.snapmaker.const import DOMAIN
 from custom_components.snapmaker.sensor import (
     async_setup_entry,
@@ -34,25 +34,28 @@ def mock_coordinator(mock_snapmaker_device):
 @pytest.fixture
 def config_entry(config_entry_data):
     """Create a mock config entry."""
-    entry = ConfigEntry(
-        version=1,
-        minor_version=0,
+    return MockConfigEntry(
         domain=DOMAIN,
         title="Snapmaker",
         data=config_entry_data,
-        source="user",
         unique_id="192.168.1.100",
     )
-    return entry
 
 
 class TestSensorPlatform:
     """Test the sensor platform setup."""
 
     async def test_async_setup_entry_single_extruder(
-        self, hass: HomeAssistant, config_entry, mock_coordinator, mock_snapmaker_device
+        self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
     ):
         """Test sensor platform setup for single extruder."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100"},
+            unique_id="192.168.1.100",
+        )
+
         mock_snapmaker_device.return_value.dual_extruder = False
         hass.data[DOMAIN] = {
             config_entry.entry_id: {
@@ -76,9 +79,16 @@ class TestSensorPlatform:
         assert any(isinstance(e, SnapmakerProgressSensor) for e in entities)
 
     async def test_async_setup_entry_dual_extruder(
-        self, hass: HomeAssistant, config_entry, mock_coordinator, mock_snapmaker_device
+        self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
     ):
         """Test sensor platform setup for dual extruder."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100"},
+            unique_id="192.168.1.100",
+        )
+
         mock_snapmaker_device.return_value.dual_extruder = True
         hass.data[DOMAIN] = {
             config_entry.entry_id: {
@@ -120,9 +130,9 @@ class TestSensorEntities:
 
         assert sensor.name == "Nozzle Temperature"
         assert sensor.unique_id == "192.168.1.100_nozzle_temp"
-        assert sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
+        assert sensor._attr_native_unit_of_measurement == UnitOfTemperature.CELSIUS
         assert sensor.native_value == 25.0
-        assert sensor.icon == "mdi:thermometer"
+        assert sensor._attr_icon == "mdi:thermometer"
 
     def test_nozzle_target_temp_sensor(self, mock_coordinator, mock_snapmaker_device):
         """Test nozzle target temperature sensor."""
@@ -142,7 +152,7 @@ class TestSensorEntities:
 
         assert sensor.name == "Bed Temperature"
         assert sensor.unique_id == "192.168.1.100_bed_temp"
-        assert sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
+        assert sensor._attr_native_unit_of_measurement == UnitOfTemperature.CELSIUS
         assert sensor.native_value == 23.0
 
     def test_bed_target_temp_sensor(self, mock_coordinator, mock_snapmaker_device):
@@ -174,9 +184,9 @@ class TestSensorEntities:
 
         assert sensor.name == "Progress"
         assert sensor.unique_id == "192.168.1.100_progress"
-        assert sensor.native_unit_of_measurement == PERCENTAGE
+        assert sensor._attr_native_unit_of_measurement == PERCENTAGE
         assert sensor.native_value == 0
-        assert sensor.icon == "mdi:progress-check"
+        assert sensor._attr_icon == "mdi:progress-check"
 
     def test_elapsed_time_sensor(self, mock_coordinator, mock_snapmaker_device):
         """Test elapsed time sensor."""

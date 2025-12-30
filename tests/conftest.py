@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from homeassistant.const import CONF_HOST
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -90,3 +91,10 @@ def mock_requests():
 def config_entry_data():
     """Return config entry data."""
     return {CONF_HOST: "192.168.1.100"}
+
+
+# This fixture is automatically used by pytest-homeassistant-custom-component
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    """Enable custom integrations for all tests."""
+    yield

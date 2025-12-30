@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.snapmaker.const import DOMAIN
 
 
@@ -78,13 +79,10 @@ class TestConfigFlow:
     ):
         """Test user configuration when device already configured."""
         # Create existing entry
-        config_entry = config_entries.ConfigEntry(
-            version=1,
-            minor_version=0,
+        config_entry = MockConfigEntry(
             domain=DOMAIN,
             title="Snapmaker",
             data={CONF_HOST: "192.168.1.100"},
-            source=config_entries.SOURCE_USER,
             unique_id="192.168.1.100",
         )
         config_entry.add_to_hass(hass)

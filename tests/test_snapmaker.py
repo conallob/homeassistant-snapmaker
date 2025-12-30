@@ -235,12 +235,16 @@ class TestSnapmakerDevice:
 
     def test_discover_exception(self):
         """Test discover with exception."""
-        with patch("custom_components.snapmaker.snapmaker.socket.socket") as mock:
-            mock.side_effect = Exception("Socket error")
+        with patch("custom_components.snapmaker.snapmaker.socket.socket") as mock_socket_class:
+            socket_instance = MagicMock()
+            socket_instance.sendto.side_effect = Exception("Socket error")
+            mock_socket_class.return_value = socket_instance
 
             devices = SnapmakerDevice.discover()
 
             assert len(devices) == 0
+            # Socket should still be closed despite exception
+            socket_instance.close.assert_called_once()
 
     def test_set_offline(self):
         """Test _set_offline method."""
