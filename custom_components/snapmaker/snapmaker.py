@@ -84,33 +84,65 @@ class SnapmakerDevice:
         retry_count = 0
         while retry_count < MAX_RETRIES:
             try:
-                # Send discovery message
-                udp_socket.sendto(DISCOVER_MESSAGE, (self._host, DISCOVER_PORT))
+                # Send discovery message to broadcast address
+                udp_socket.sendto(DISCOVER_MESSAGE, ("255.255.255.255", DISCOVER_PORT))
 
-                # Wait for response
-                reply, _ = udp_socket.recvfrom(BUFFER_SIZE)
+                # Wait for responses and filter for our target host
+                found = False
+                start_time = socket.time() if hasattr(socket, 'time') else None
 
-                # Parse response
-                elements = str(reply).split('|')
-                sn_ip = (elements[0]).replace("'", "")
-                sn_model = (elements[1]).replace("'", "")
-                sn_status = (elements[2]).replace("'", "")
+                while True:
+                    try:
+                        reply, addr = udp_socket.recvfrom(BUFFER_SIZE)
 
-                _, sn_ip_val = sn_ip.split('@')
-                _, sn_model_val = sn_model.split(':')
-                _, sn_status_val = sn_status.split(':')
+                        # Parse response
+                        elements = str(reply).split('|')
+                        sn_ip = (elements[0]).replace("'", "")
+                        sn_model = (elements[1]).replace("'", "")
+                        sn_status = (elements[2]).replace("'", "")
 
-                # Update device info
-                self._available = True
-                self._model = sn_model_val
-                self._status = sn_status_val
-                self._data = {
-                    "ip": sn_ip_val,
-                    "model": sn_model_val,
-                    "status": sn_status_val
-                }
+                        _, sn_ip_val = sn_ip.split('@')
+                        _, sn_model_val = sn_model.split(':')
+                        _, sn_status_val = sn_status.split(':')
 
-                break
+                        # Check if this response is from our target host
+                        if sn_ip_val == self._host or addr[0] == self._host:
+                            # Update device info
+                            self._available = True
+                            self._model = sn_model_val
+                            self._status = sn_status_val
+                            self._data = {
+                                "ip": sn_ip_val,
+                                "model": sn_model_val,
+                                "status": sn_status_val
+                            }
+                            found = True
+                            break
+                    except socket.timeout:
+                        # No more responses
+                        break
+
+                if found:
+                    break
+
+                # If we didn't find our device, retry
+                retry_count += 1
+                if retry_count >= MAX_RETRIES:
+                    self._available = False
+                    self._status = "OFFLINE"
+                    self._data = {
+                        "ip": self._host,
+                        "model": self._model or "N/A",
+                        "status": "OFFLINE",
+                        "nozzle_temperature": 0,
+                        "nozzle_target_temperature": 0,
+                        "heated_bed_temperature": 0,
+                        "heated_bed_target_temperature": 0,
+                        "file_name": "N/A",
+                        "progress": 0,
+                        "elapsed_time": "00:00:00",
+                        "remaining_time": "00:00:00"
+                    }
             except socket.timeout:
                 retry_count += 1
                 if retry_count >= MAX_RETRIES:
