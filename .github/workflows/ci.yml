@@ -12,6 +12,11 @@ on:
       - master
       - develop
 
+# Restrict permissions to minimum required for security
+permissions:
+  contents: read
+  pull-requests: write  # Allow posting coverage comments
+
 jobs:
   test:
     name: Run Tests

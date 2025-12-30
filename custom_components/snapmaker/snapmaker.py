@@ -96,7 +96,13 @@ class SnapmakerDevice:
         }
 
     def _check_online(self) -> None:
-        """Check if device is online via discovery."""
+        """Check if device is online via discovery.
+
+        Note: A new UDP socket is created for each discovery attempt.
+        This is intentional for UDP broadcast discovery as it avoids stale
+        state and the overhead is minimal. For persistent connections,
+        use the HTTP API with token authentication.
+        """
         udp_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         udp_socket.settimeout(SOCKET_TIMEOUT)
@@ -145,9 +151,9 @@ class SnapmakerDevice:
                                     continue
 
                                 # Split and discard prefix (e.g., "IP@" becomes "192.168.1.100")
-                                _prefix, sn_ip_val = sn_ip.split("@", 1)
-                                _prefix, sn_model_val = sn_model.split(":", 1)
-                                _prefix, sn_status_val = sn_status.split(":", 1)
+                                _, sn_ip_val = sn_ip.split("@", 1)
+                                _, sn_model_val = sn_model.split(":", 1)
+                                _, sn_status_val = sn_status.split(":", 1)
 
                                 # Check if this response is from our target host
                                 if sn_ip_val == self._host or addr[0] == self._host:
@@ -172,6 +178,7 @@ class SnapmakerDevice:
                             # No more responses in this iteration
                             break
 
+                    # Exit retry loop immediately if device was found
                     if found:
                         break
 
@@ -213,7 +220,11 @@ class SnapmakerDevice:
                 return None
 
             # Extract token from response
-            token = json.loads(response.text).get("token")
+            try:
+                token = json.loads(response.text).get("token")
+            except (json.JSONDecodeError, ValueError) as json_err:
+                _LOGGER.error("Failed to parse token response: %s", json_err)
+                return None
 
             if not token:
                 _LOGGER.error("No token received from Snapmaker")
@@ -226,14 +237,23 @@ class SnapmakerDevice:
                 url, data=form_data, headers=headers, timeout=API_TIMEOUT
             )
 
-            if json.loads(response.text).get("token") == token:
-                _LOGGER.info("Successfully connected to Snapmaker")
-                return token
+            # Validate token response with JSON error handling
+            try:
+                response_data = json.loads(response.text)
+                if response_data.get("token") == token:
+                    _LOGGER.info("Successfully connected to Snapmaker")
+                    return token
+            except (json.JSONDecodeError, ValueError) as json_err:
+                _LOGGER.error("Failed to parse token validation response: %s", json_err)
+                return None
 
             _LOGGER.error("Token validation failed")
             return None
+        except requests.exceptions.RequestException as req_err:
+            _LOGGER.error("Network error getting token from Snapmaker: %s", req_err)
+            return None
         except Exception as err:
-            _LOGGER.error("Error getting token from Snapmaker: %s", err)
+            _LOGGER.error("Unexpected error getting token from Snapmaker: %s", err)
             return None
 
     def _get_status(self) -> None:
