@@ -1,11 +1,10 @@
 """Config flow for Snapmaker integration."""
+
 import logging
-import voluptuous as vol
+
 from homeassistant import config_entries
-from homeassistant.components import dhcp
-from homeassistant.const import CONF_HOST, CONF_NAME
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.const import CONF_HOST
+import voluptuous as vol
 
 from .const import DOMAIN
 from .snapmaker import SnapmakerDevice
@@ -32,8 +31,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate the connection
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(
-                    snapmaker.update)
+                result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
                     return self.async_create_entry(
                         title=f"Snapmaker {snapmaker.model or host}",
@@ -89,8 +87,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate the connection again
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(
-                    snapmaker.update)
+                result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
                     return self.async_create_entry(
                         title=f"Snapmaker {snapmaker.model or host}",
@@ -123,7 +120,8 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Set discovered device for confirmation
         self.context["host"] = host
         self.context["title_placeholders"] = {
-            "model": discovery_info.get("model", "Unknown")}
+            "model": discovery_info.get("model", "Unknown")
+        }
 
         return await self.async_step_confirm()
 
@@ -140,8 +138,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Discover devices
-        devices = await self.hass.async_add_executor_job(
-            SnapmakerDevice.discover)
+        devices = await self.hass.async_add_executor_job(SnapmakerDevice.discover)
 
         if not devices:
             return self.async_abort(reason="no_devices_found")
@@ -151,8 +148,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Create device selection schema
         devices_options = {
-            device[
-                "host"]: f"{device['model']} ({device['host']}) - {device['status']}"
+            device["host"]: f"{device['model']} ({device['host']}) - {device['status']}"
             for device in devices
         }
 
@@ -174,31 +170,3 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         return await getattr(self, f"async_step_{user_input}")()
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        """Get the options flow for this handler."""
-        return SnapmakerOptionsFlowHandler(config_entry)
-
-
-class SnapmakerOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle Snapmaker options."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        """Manage the options."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    # Add options here if needed
-                }
-            ),
-        )

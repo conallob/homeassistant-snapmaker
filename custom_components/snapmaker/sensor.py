@@ -1,29 +1,15 @@
 """Sensor platform for Snapmaker integration."""
+
 from __future__ import annotations
 
 import logging
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-    UnitOfTemperature,
-    UnitOfTime,
-)
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import StateType
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
-from typing import Any, Callable, Dict, List, Optional
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 
@@ -31,9 +17,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-        hass: HomeAssistant,
-        entry: ConfigEntry,
-        async_add_entities: AddEntitiesCallback,
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Snapmaker sensor based on a config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
@@ -55,18 +41,22 @@ async def async_setup_entry(
     # So we'll add all possible sensors and they'll show appropriate values
     if device.dual_extruder:
         # Dual extruder configuration
-        entities.extend([
-            SnapmakerNozzle1TempSensor(coordinator, device),
-            SnapmakerNozzle1TargetTempSensor(coordinator, device),
-            SnapmakerNozzle2TempSensor(coordinator, device),
-            SnapmakerNozzle2TargetTempSensor(coordinator, device),
-        ])
+        entities.extend(
+            [
+                SnapmakerNozzle1TempSensor(coordinator, device),
+                SnapmakerNozzle1TargetTempSensor(coordinator, device),
+                SnapmakerNozzle2TempSensor(coordinator, device),
+                SnapmakerNozzle2TargetTempSensor(coordinator, device),
+            ]
+        )
     else:
         # Single nozzle configuration (default)
-        entities.extend([
-            SnapmakerNozzleTempSensor(coordinator, device),
-            SnapmakerNozzleTargetTempSensor(coordinator, device),
-        ])
+        entities.extend(
+            [
+                SnapmakerNozzleTempSensor(coordinator, device),
+                SnapmakerNozzleTargetTempSensor(coordinator, device),
+            ]
+        )
 
     async_add_entities(entities)
 
