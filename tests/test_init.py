@@ -103,8 +103,8 @@ class TestInit:
 
         coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
-        with pytest.raises(UpdateFailed):
-            await coordinator.async_refresh()
+        # async_refresh() doesn't raise, it catches exceptions internally
+        await coordinator.async_refresh()
 
         assert coordinator.last_update_success is False
 
