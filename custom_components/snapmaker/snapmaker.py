@@ -16,9 +16,11 @@ DISCOVER_PORT = 20054
 DISCOVER_MESSAGE = b"discover"
 SOCKET_TIMEOUT = 1.0  # Seconds to wait for UDP responses
 MAX_RETRIES = 5  # Number of discovery attempts before marking device offline
+MAX_RESPONSES_PER_RETRY = 10  # Maximum device responses to check per retry attempt
 RETRY_DELAY = 0.5  # Seconds to wait between discovery retry attempts
 BUFFER_SIZE = 1024  # UDP receive buffer size in bytes
-API_TIMEOUT = 5  # Seconds to wait for HTTP API responses
+CONNECTION_TIMEOUT = 3  # Seconds to wait for HTTP connection establishment
+API_TIMEOUT = 5  # Seconds to wait for HTTP API responses (read timeout)
 
 
 class SnapmakerDevice:
@@ -120,10 +122,12 @@ class SnapmakerDevice:
 
                     # Wait for responses and filter for our target host
                     found = False
+                    responses_checked = 0
 
-                    while True:
+                    while responses_checked < MAX_RESPONSES_PER_RETRY:
                         try:
                             reply, addr = udp_socket.recvfrom(BUFFER_SIZE)
+                            responses_checked += 1
 
                             # Parse response - decode bytes properly
                             try:
@@ -227,15 +231,18 @@ class SnapmakerDevice:
             url = f"http://{self._host}:8080/api/v1/connect"
 
             # First request to initiate connection
-            response = requests.post(url, timeout=API_TIMEOUT)
+            response = requests.post(url, timeout=(CONNECTION_TIMEOUT, API_TIMEOUT))
 
-            if "Failed" in response.text:
-                _LOGGER.error("Failed to connect to Snapmaker: %s", response.text)
-                return None
-
-            # Extract token from response
+            # Extract token from response with proper JSON parsing
             try:
-                token = json.loads(response.text).get("token")
+                response_data = json.loads(response.text)
+
+                # Check for error status in response
+                if not response_data or response_data.get("status") == "error":
+                    _LOGGER.error("Failed to connect to Snapmaker: %s", response.text)
+                    return None
+
+                token = response_data.get("token")
             except (json.JSONDecodeError, ValueError) as json_err:
                 _LOGGER.error("Failed to parse token response: %s", json_err)
                 return None
@@ -248,7 +255,10 @@ class SnapmakerDevice:
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             form_data = {"token": token}
             response = requests.post(
-                url, data=form_data, headers=headers, timeout=API_TIMEOUT
+                url,
+                data=form_data,
+                headers=headers,
+                timeout=(CONNECTION_TIMEOUT, API_TIMEOUT),
             )
 
             # Validate token response with JSON error handling
@@ -274,7 +284,7 @@ class SnapmakerDevice:
         """Get status from Snapmaker device."""
         try:
             url = f"http://{self._host}:8080/api/v1/status?token={self._token}"
-            response = requests.get(url, timeout=API_TIMEOUT)
+            response = requests.get(url, timeout=(CONNECTION_TIMEOUT, API_TIMEOUT))
 
             # Check if response is valid
             if not response.text or response.text.strip() == "":
