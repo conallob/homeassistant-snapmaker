@@ -236,7 +236,9 @@ class TestConfigFlow:
         the discover method is properly mocked.
         """
         # Mock SnapmakerDevice for device validation
-        with patch("custom_components.snapmaker.config_flow.SnapmakerDevice") as mock_device:
+        with patch(
+            "custom_components.snapmaker.config_flow.SnapmakerDevice"
+        ) as mock_device:
             mock_instance = MagicMock()
             mock_instance.available = True
             mock_instance.model = "Snapmaker A350"
