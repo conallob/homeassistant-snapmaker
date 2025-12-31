@@ -37,6 +37,11 @@ def mock_snapmaker_device():
     ):
         mock_init.return_value = device
         mock_config.return_value = device
+
+        # Preserve the discover static method for mock_discovery fixture to patch
+        # The discover method will be patched separately by mock_discovery fixture
+        mock_config.discover = MagicMock()
+
         yield mock_init
 
 
