@@ -228,29 +228,40 @@ class TestConfigFlow:
         assert result["reason"] == "not_snapmaker_device"
 
     async def test_pick_device_flow_success(
-        self, hass, mock_discovery, mock_snapmaker_device, mock_setup_entry
+        self, hass, mock_setup_entry, mock_discovery
     ):
-        """Test pick device flow."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-        )
+        """Test pick device flow.
 
-        # Start pick_device step
-        flow = hass.config_entries.flow._progress[result["flow_id"]]
-        result = await flow.async_step_pick_device()
+        Note: mock_discovery must come after mock_setup_entry to ensure
+        the discover method is properly mocked.
+        """
+        # Mock SnapmakerDevice for device validation
+        with patch("custom_components.snapmaker.config_flow.SnapmakerDevice") as mock_device:
+            mock_instance = MagicMock()
+            mock_instance.available = True
+            mock_instance.model = "Snapmaker A350"
+            mock_device.return_value = mock_instance
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "pick_device"
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN,
+                context={"source": config_entries.SOURCE_USER},
+            )
 
-        # Configure with selected device
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {"device": "192.168.1.100"},
-        )
+            # Start pick_device step
+            flow = hass.config_entries.flow._progress[result["flow_id"]]
+            result = await flow.async_step_pick_device()
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"] == {CONF_HOST: "192.168.1.100"}
+            assert result["type"] == FlowResultType.FORM
+            assert result["step_id"] == "pick_device"
+
+            # Configure with selected device
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"device": "192.168.1.100"},
+            )
+
+            assert result["type"] == FlowResultType.CREATE_ENTRY
+            assert result["data"] == {CONF_HOST: "192.168.1.100"}
 
     async def test_pick_device_flow_no_devices(
         self, hass, mock_discovery, mock_setup_entry
