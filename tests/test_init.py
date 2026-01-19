@@ -1,7 +1,6 @@
 """Tests for the Snapmaker integration initialization."""
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -103,8 +102,7 @@ class TestInit:
 
         coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
-        with pytest.raises(UpdateFailed):
-            await coordinator.async_refresh()
+        await coordinator.async_refresh()
 
         assert coordinator.last_update_success is False
 
