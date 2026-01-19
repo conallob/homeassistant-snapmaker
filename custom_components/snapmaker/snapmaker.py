@@ -19,8 +19,40 @@ MAX_RETRIES = 5  # Number of discovery attempts before marking device offline
 MAX_RESPONSES_PER_RETRY = 10  # Maximum device responses to check per retry attempt
 RETRY_DELAY = 0.5  # Seconds to wait between discovery retry attempts
 BUFFER_SIZE = 1024  # UDP receive buffer size in bytes
+# Connection timeout: chosen to balance responsiveness (3s) with reliability on slower networks
 CONNECTION_TIMEOUT = 3  # Seconds to wait for HTTP connection establishment
+# API timeout: allows time for device processing (5s) while preventing indefinite hangs
 API_TIMEOUT = 5  # Seconds to wait for HTTP API responses (read timeout)
+
+
+def _clean_discovery_response(response: bytes) -> str:
+    """Clean and decode UDP discovery response.
+
+    Strips quotes (single and double) that may be present in responses
+    from different firmware versions.
+
+    Args:
+        response: Raw UDP response bytes
+
+    Returns:
+        Cleaned UTF-8 decoded string
+    """
+    return response.decode("utf-8").replace("'", "").replace('"', "")
+
+
+def _get_backoff_delay(retry_count: int) -> float:
+    """Calculate exponential backoff delay.
+
+    Progression: 0.5s, 1s, 2s, 4s, 8s...
+    Formula: RETRY_DELAY * 2^(retry_count-1)
+
+    Args:
+        retry_count: Current retry attempt (1-indexed)
+
+    Returns:
+        Delay in seconds
+    """
+    return RETRY_DELAY * (2 ** (retry_count - 1))
 
 
 class SnapmakerDevice:
@@ -90,15 +122,28 @@ class SnapmakerDevice:
         # First check if device is online via discovery
         self._check_online()
 
-        # If device is online and we have a token, get detailed status
+        # If device is online, authenticate and get detailed status
         if self._available and self._status != "OFFLINE":
+            # Get token if we don't have one
             if not self._token:
                 self._token = self._get_token()
                 if not self._token:
                     self._last_error = "Failed to acquire authentication token"
 
+            # Try to get status with current token
             if self._token:
                 self._get_status()
+
+                # If status call invalidated the token (e.g., token expired), retry once
+                if not self._token:
+                    _LOGGER.info("Token was invalidated, attempting to re-authenticate")
+                    self._token = self._get_token()
+                    if self._token:
+                        self._get_status()
+                    else:
+                        self._last_error = (
+                            "Failed to re-authenticate after token invalidation"
+                        )
 
         return self._data
 
@@ -152,12 +197,7 @@ class SnapmakerDevice:
 
                             # Parse response - decode bytes properly
                             try:
-                                # Decode and strip any quotes that may be in the response
-                                response_str = (
-                                    reply.decode("utf-8")
-                                    .replace("'", "")
-                                    .replace('"', "")
-                                )
+                                response_str = _clean_discovery_response(reply)
                                 elements = response_str.split("|")
 
                                 if len(elements) < 3:
@@ -210,6 +250,16 @@ class SnapmakerDevice:
                             # No more responses in this iteration
                             break
 
+                    # Log if we hit the response limit without finding our device
+                    if not found and responses_checked >= MAX_RESPONSES_PER_RETRY:
+                        _LOGGER.debug(
+                            "Checked %d discovery responses without finding device %s (attempt %d/%d)",
+                            MAX_RESPONSES_PER_RETRY,
+                            self._host,
+                            retry_count + 1,
+                            MAX_RETRIES,
+                        )
+
                     # Exit retry loop immediately if device was found
                     if found:
                         break
@@ -217,9 +267,7 @@ class SnapmakerDevice:
                     # If we didn't find our device, retry with exponential backoff
                     retry_count += 1
                     if retry_count < MAX_RETRIES:
-                        # Exponential backoff: 0.5s, 1s, 2s, 4s
-                        delay = RETRY_DELAY * (2 ** (retry_count - 1))
-                        time.sleep(delay)
+                        time.sleep(_get_backoff_delay(retry_count))
 
                 except Exception as err:
                     _LOGGER.error(
@@ -230,9 +278,7 @@ class SnapmakerDevice:
                     )
                     retry_count += 1
                     if retry_count < MAX_RETRIES:
-                        # Exponential backoff: 0.5s, 1s, 2s, 4s
-                        delay = RETRY_DELAY * (2 ** (retry_count - 1))
-                        time.sleep(delay)
+                        time.sleep(_get_backoff_delay(retry_count))
 
             # If we exhausted all retries without finding the device, mark as offline
             if retry_count >= MAX_RETRIES:
@@ -321,6 +367,7 @@ class SnapmakerDevice:
                 _LOGGER.error("Empty response from Snapmaker status API")
                 self._available = False
                 self._status = "OFFLINE"
+                self._token = None  # Invalidate token to force re-authentication
                 return
 
             # Check for HTTP errors
@@ -337,6 +384,7 @@ class SnapmakerDevice:
                 )
                 self._available = False
                 self._status = "OFFLINE"
+                self._token = None  # Invalidate token to force re-authentication
                 return
 
             # Extract status data
@@ -415,6 +463,7 @@ class SnapmakerDevice:
             _LOGGER.error("Error getting status from Snapmaker: %s", err)
             self._available = False
             self._status = "OFFLINE"
+            self._token = None  # Invalidate token to force re-authentication
 
     @staticmethod
     def discover() -> list:
