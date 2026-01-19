@@ -26,13 +26,24 @@ async def async_setup(hass: HomeAssistant, config: dict):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Snapmaker from a config entry."""
     host = entry.data[CONF_HOST]
+    # Retrieve cached token if available
+    cached_token = entry.data.get("token")
 
-    snapmaker = SnapmakerDevice(host)
+    snapmaker = SnapmakerDevice(host, token=cached_token)
 
     async def async_update_data():
         """Fetch data from the Snapmaker device."""
         try:
-            return await hass.async_add_executor_job(snapmaker.update)
+            data = await hass.async_add_executor_job(snapmaker.update)
+
+            # Cache the token if it changed
+            if snapmaker.token and snapmaker.token != entry.data.get("token"):
+                new_data = dict(entry.data)
+                new_data["token"] = snapmaker.token
+                hass.config_entries.async_update_entry(entry, data=new_data)
+                _LOGGER.debug("Cached new authentication token for %s", host)
+
+            return data
         except Exception as err:
             raise UpdateFailed(f"Error communicating with Snapmaker: {err}")
 

@@ -26,15 +26,21 @@ API_TIMEOUT = 5  # Seconds to wait for HTTP API responses (read timeout)
 class SnapmakerDevice:
     """Class to communicate with a Snapmaker device."""
 
-    def __init__(self, host: str):
-        """Initialize the Snapmaker device."""
+    def __init__(self, host: str, token: Optional[str] = None):
+        """Initialize the Snapmaker device.
+
+        Args:
+            host: The IP address or hostname of the device
+            token: Optional cached authentication token
+        """
         self._host = host
-        self._token = None
+        self._token = token
         self._data = {}
         self._available = False
         self._model = None
         self._status = "OFFLINE"
         self._dual_extruder = False
+        self._last_error = None
 
     @property
     def host(self) -> str:
@@ -66,8 +72,21 @@ class SnapmakerDevice:
         """Return True if device has dual extruder."""
         return self._dual_extruder
 
+    @property
+    def token(self) -> Optional[str]:
+        """Return the authentication token."""
+        return self._token
+
+    @property
+    def last_error(self) -> Optional[str]:
+        """Return the last error message, if any."""
+        return self._last_error
+
     def update(self) -> Dict[str, Any]:
         """Update device data."""
+        # Clear previous error on new update attempt
+        self._last_error = None
+
         # First check if device is online via discovery
         self._check_online()
 
@@ -75,6 +94,8 @@ class SnapmakerDevice:
         if self._available and self._status != "OFFLINE":
             if not self._token:
                 self._token = self._get_token()
+                if not self._token:
+                    self._last_error = "Failed to acquire authentication token"
 
             if self._token:
                 self._get_status()
@@ -131,7 +152,12 @@ class SnapmakerDevice:
 
                             # Parse response - decode bytes properly
                             try:
-                                response_str = reply.decode("utf-8")
+                                # Decode and strip any quotes that may be in the response
+                                response_str = (
+                                    reply.decode("utf-8")
+                                    .replace("'", "")
+                                    .replace('"', "")
+                                )
                                 elements = response_str.split("|")
 
                                 if len(elements) < 3:
@@ -188,10 +214,12 @@ class SnapmakerDevice:
                     if found:
                         break
 
-                    # If we didn't find our device, retry after a brief delay
+                    # If we didn't find our device, retry with exponential backoff
                     retry_count += 1
                     if retry_count < MAX_RETRIES:
-                        time.sleep(RETRY_DELAY)
+                        # Exponential backoff: 0.5s, 1s, 2s, 4s
+                        delay = RETRY_DELAY * (2 ** (retry_count - 1))
+                        time.sleep(delay)
 
                 except Exception as err:
                     _LOGGER.error(
@@ -202,7 +230,9 @@ class SnapmakerDevice:
                     )
                     retry_count += 1
                     if retry_count < MAX_RETRIES:
-                        time.sleep(RETRY_DELAY)
+                        # Exponential backoff: 0.5s, 1s, 2s, 4s
+                        delay = RETRY_DELAY * (2 ** (retry_count - 1))
+                        time.sleep(delay)
 
             # If we exhausted all retries without finding the device, mark as offline
             if retry_count >= MAX_RETRIES:
@@ -311,6 +341,7 @@ class SnapmakerDevice:
 
             # Extract status data
             status = data.get("status")
+            toolhead = data.get("toolHead", "Unknown")
 
             # Check for dual extruder configuration
             # Dual extruders have nozzle1Temperature and nozzle2Temperature fields
@@ -352,6 +383,7 @@ class SnapmakerDevice:
             self._status = status
             update_dict = {
                 "status": status,
+                "toolhead": toolhead,
                 "heated_bed_temperature": bed_temp,
                 "heated_bed_target_temperature": bed_target_temp,
                 "file_name": file_name,
@@ -405,7 +437,10 @@ class SnapmakerDevice:
 
                     # Parse response - decode bytes properly
                     try:
-                        response_str = reply.decode("utf-8")
+                        # Decode and strip any quotes that may be in the response
+                        response_str = (
+                            reply.decode("utf-8").replace("'", "").replace('"', "")
+                        )
                         elements = response_str.split("|")
 
                         if len(elements) < 3:

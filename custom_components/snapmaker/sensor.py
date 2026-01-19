@@ -86,6 +86,14 @@ class SnapmakerSensorBase(CoordinatorEntity):
         """Return if entity is available."""
         return self.coordinator.last_update_success and self._device.available
 
+    @property
+    def extra_state_attributes(self):
+        """Return extra state attributes."""
+        attributes = {}
+        if self._device.last_error:
+            attributes["last_error"] = self._device.last_error
+        return attributes
+
 
 class SnapmakerStatusSensor(SnapmakerSensorBase):
     """Representation of a Snapmaker status sensor."""
@@ -101,6 +109,15 @@ class SnapmakerStatusSensor(SnapmakerSensorBase):
     def state(self) -> str:
         """Return the state of the sensor."""
         return self._device.status
+
+    @property
+    def extra_state_attributes(self):
+        """Return extra state attributes."""
+        attributes = super().extra_state_attributes
+        # Add toolhead information if available
+        if self.coordinator.data and "toolhead" in self.coordinator.data:
+            attributes["toolhead"] = self.coordinator.data["toolhead"]
+        return attributes
 
 
 class SnapmakerNozzleTempSensor(SnapmakerSensorBase):
