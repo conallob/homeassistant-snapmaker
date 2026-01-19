@@ -1,7 +1,6 @@
 """Tests for the Snapmaker integration initialization."""
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -98,15 +97,22 @@ class TestInit:
 
         await async_setup_entry(hass, config_entry)
 
-        # Now set the side effect after setup
-        mock_snapmaker_device.return_value.update.side_effect = Exception("Test error")
-
         coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+        # Verify initial successful update
+        assert coordinator.last_update_success is True
+        initial_data = coordinator.data
+
+        # Now set the side effect to simulate failure
+        mock_snapmaker_device.return_value.update.side_effect = Exception("Test error")
 
         # async_refresh() doesn't raise, it catches exceptions internally
         await coordinator.async_refresh()
 
+        # Verify coordinator handles failure gracefully
         assert coordinator.last_update_success is False
+        # Coordinator should retain last known good data on failure
+        assert coordinator.data == initial_data
 
     async def test_coordinator_interval(
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device
