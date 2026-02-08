@@ -138,7 +138,7 @@ class TestBinarySensorEntities:
 
         assert sensor.name == "Emergency Stop Button"
         assert sensor.unique_id == "192.168.1.100_emergency_stop"
-        assert sensor._attr_device_class == BinarySensorDeviceClass.CONNECTIVITY
+        assert sensor._attr_device_class == BinarySensorDeviceClass.SAFETY
         assert sensor.is_on is False
 
         mock_snapmaker_device.return_value.data["has_emergency_stop"] = True

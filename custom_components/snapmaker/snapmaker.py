@@ -23,13 +23,16 @@ BUFFER_SIZE = 1024  # UDP receive buffer size in bytes
 API_TIMEOUT = 5  # Seconds to wait for HTTP API responses
 API_PORT = 8080  # Default HTTP API port
 TCP_CHECK_TIMEOUT = 1.0  # Seconds to wait for TCP reachability check
-REACHABILITY_MAX_RETRIES = 3  # Max retries for reachability check
+REACHABILITY_MAX_RETRIES = 2  # Max retries for reachability check
 # Base for exponential backoff (seconds). Kept low because time.sleep()
 # blocks the executor thread during the coordinator update cycle.
 REACHABILITY_BACKOFF_BASE = 1
 
 # Keys to strip from the raw API response before exposing as diagnostic attributes
 SENSITIVE_API_KEYS = {"token"}
+
+# Patterns that indicate potentially sensitive API keys
+_SENSITIVE_KEY_PATTERNS = ("token", "password", "secret", "key", "credential")
 
 
 class SnapmakerDevice:
@@ -381,8 +384,10 @@ class SnapmakerDevice:
     def _get_status(self) -> None:
         """Get status from Snapmaker device."""
         try:
-            url = f"http://{self._host}:{API_PORT}/api/v1/status?token={self._token}"
-            response = requests.get(url, timeout=API_TIMEOUT)
+            url = f"http://{self._host}:{API_PORT}/api/v1/status"
+            response = requests.get(
+                url, params={"token": self._token}, timeout=API_TIMEOUT
+            )
 
             # Check if response is valid
             if not response.text or response.text.strip() == "":
@@ -409,6 +414,18 @@ class SnapmakerDevice:
 
             # Store the raw API response for diagnostic purposes
             self._raw_api_response = data
+
+            # Warn about any new keys that look sensitive but aren't in our filter set
+            for api_key in data:
+                if api_key not in SENSITIVE_API_KEYS and any(
+                    pattern in api_key.lower() for pattern in _SENSITIVE_KEY_PATTERNS
+                ):
+                    _LOGGER.warning(
+                        "API response from %s contains potentially sensitive key '%s' "
+                        "that is not in the filter set",
+                        self._host,
+                        api_key,
+                    )
 
             # Extract status data
             status = data.get("status")
@@ -441,6 +458,9 @@ class SnapmakerDevice:
             ):
                 self._dual_extruder = True
                 tool_head = "Dual Extruder"
+
+            if self._dual_extruder:
+                _LOGGER.debug("Detected dual extruder configuration for %s", self._host)
 
             # Extract temperature data based on configuration
             if self._dual_extruder:

@@ -143,8 +143,7 @@ class SnapmakerEmergencyStopBinarySensor(SnapmakerBinarySensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Emergency Stop Button"
         self._attr_unique_id = f"{self._device.host}_emergency_stop"
-        self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_device_class = BinarySensorDeviceClass.SAFETY
         self._attr_icon = "mdi:stop-circle"
 
     @property

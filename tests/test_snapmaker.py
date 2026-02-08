@@ -589,7 +589,7 @@ class TestTCPReachability:
             assert mock_sleep.call_count == REACHABILITY_MAX_RETRIES - 1
 
     def test_check_reachable_succeeds_on_retry(self):
-        """Test TCP check succeeds on second attempt."""
+        """Test TCP check succeeds on second (last) attempt."""
         with (
             patch(
                 "custom_components.snapmaker.snapmaker.socket.socket"
@@ -646,8 +646,9 @@ class TestTCPReachability:
             device = SnapmakerDevice("192.168.1.100")
             device._check_reachable()
 
-            # Backoff with base=1: 1^0=1, 1^1=1 (for 3 retries, 2 sleeps)
-            expected_sleeps = [call(1), call(1)]
+            # With REACHABILITY_MAX_RETRIES=2, there's 1 sleep between attempts
+            # Backoff with base=1: 1^0=1
+            expected_sleeps = [call(1)]
             assert mock_sleep.call_args_list == expected_sleeps
 
 
@@ -708,3 +709,179 @@ class TestSensitiveKeyFiltering:
         assert "token" not in filtered
         assert filtered["status"] == "IDLE"
         assert filtered["nozzleTemperature"] == 25.0
+
+    def test_warns_on_suspicious_api_keys(self, mock_requests, caplog):
+        """Test that a warning is logged for API keys matching sensitive patterns."""
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "apiSecretKey": "some-value",
+            "nozzleTemperature": 25.0
+        }"""
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            device = SnapmakerDevice("192.168.1.100")
+            device._token = "test-token-123"
+            device._available = True
+            device._get_status()
+
+        assert "potentially sensitive key 'apiSecretKey'" in caplog.text
+
+    def test_no_warning_for_known_filtered_keys(self, mock_requests, caplog):
+        """Test that no warning is logged for keys already in the filter set."""
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "token": "filtered-value",
+            "nozzleTemperature": 25.0
+        }"""
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            device = SnapmakerDevice("192.168.1.100")
+            device._token = "test-token-123"
+            device._available = True
+            device._get_status()
+
+        assert "potentially sensitive key" not in caplog.text
+
+
+class TestTokenCallbackEdgeCases:
+    """Test edge cases for the token update callback."""
+
+    def test_callback_not_called_with_same_token(self, mock_requests):
+        """Test that callback is not re-invoked when token hasn't changed."""
+        call_count = 0
+        received_tokens = []
+
+        def counting_callback(token):
+            nonlocal call_count
+            call_count += 1
+            received_tokens.append(token)
+
+        device = SnapmakerDevice("192.168.1.100")
+        device.set_token_update_callback(counting_callback)
+
+        # First call - should invoke callback
+        device._get_token()
+        assert call_count == 1
+        assert received_tokens == ["test-token-123"]
+
+    def test_callback_with_none_token_not_called(self, mock_requests):
+        """Test that callback is not invoked with None token."""
+        mock_requests.post.return_value.text = "{}"
+
+        callback = MagicMock()
+        device = SnapmakerDevice("192.168.1.100")
+        device.set_token_update_callback(callback)
+
+        device._get_token()
+        callback.assert_not_called()
+
+
+class TestStatusTokenSecurity:
+    """Test that the token is not exposed in URLs."""
+
+    def test_status_uses_params_not_url(self, mock_requests):
+        """Test that _get_status passes token via params, not in the URL."""
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "secret-token-abc"
+        device._available = True
+        device._get_status()
+
+        # Verify requests.get was called with params kwarg
+        mock_requests.get.assert_called_once()
+        call_args = mock_requests.get.call_args
+
+        # URL should NOT contain the token
+        url = call_args[0][0] if call_args[0] else call_args[1].get("url", "")
+        assert "secret-token-abc" not in url
+
+        # Token should be in params
+        assert call_args[1]["params"] == {"token": "secret-token-abc"}
+
+
+class TestDualExtruderDetection:
+    """Test dual extruder detection edge cases."""
+
+    def test_single_extruder_with_nozzle_temperature(self, mock_requests):
+        """Test single extruder when nozzleTemperature is present."""
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "toolHead": "TOOLHEAD_3DPRINTING_1",
+            "nozzleTemperature": 25.0,
+            "nozzleTargetTemperature": 0.0,
+            "heatedBedTemperature": 23.0,
+            "heatedBedTargetTemperature": 0.0
+        }"""
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token"
+        device._available = True
+        device._get_status()
+
+        assert device.dual_extruder is False
+        assert device.data["nozzle_temperature"] == 25.0
+
+    def test_dual_extruder_with_both_nozzle_fields(self, mock_requests):
+        """Test dual extruder detected from nozzle1/nozzle2 fields."""
+        mock_requests.get.return_value.text = """{
+            "status": "RUNNING",
+            "toolHead": "TOOLHEAD_3DPRINTING_2",
+            "nozzle1Temperature": 210.0,
+            "nozzle1TargetTemperature": 215.0,
+            "nozzle2Temperature": 200.0,
+            "nozzle2TargetTemperature": 205.0,
+            "nozzleTemperature": 210.0,
+            "heatedBedTemperature": 60.0,
+            "heatedBedTargetTemperature": 65.0
+        }"""
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token"
+        device._available = True
+        device._get_status()
+
+        assert device.dual_extruder is True
+        assert device.data["nozzle1_temperature"] == 210.0
+        assert device.data["nozzle2_temperature"] == 200.0
+
+    def test_dual_extruder_fallback_from_toolhead_without_single_nozzle(
+        self, mock_requests
+    ):
+        """Test dual extruder detected when TOOLHEAD_3DPRINTING_1 has no nozzleTemperature."""
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "toolHead": "TOOLHEAD_3DPRINTING_1",
+            "nozzle1Temperature": 25.0,
+            "nozzle1TargetTemperature": 0.0,
+            "heatedBedTemperature": 23.0,
+            "heatedBedTargetTemperature": 0.0
+        }"""
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token"
+        device._available = True
+        device._get_status()
+
+        # Only nozzle1 present + TOOLHEAD_3DPRINTING_1 + no nozzleTemperature => dual
+        assert device.dual_extruder is True
+        assert device.data["tool_head"] == "Dual Extruder"
+
+    def test_non_printing_toolhead_not_dual(self, mock_requests):
+        """Test that CNC/laser toolheads are never detected as dual extruder."""
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "toolHead": "TOOLHEAD_CNC_1",
+            "heatedBedTemperature": 0,
+            "heatedBedTargetTemperature": 0
+        }"""
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token"
+        device._available = True
+        device._get_status()
+
+        assert device.dual_extruder is False
+        assert device.data["tool_head"] == "CNC"

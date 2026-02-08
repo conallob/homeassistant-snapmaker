@@ -37,12 +37,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # on the event loop.
     def _on_token_update(new_token: str) -> None:
         """Persist new token to config entry data (called from executor thread)."""
-        if new_token and new_token != entry.data.get(CONF_TOKEN):
-            new_data = {**entry.data, CONF_TOKEN: new_token}
-            hass.loop.call_soon_threadsafe(
-                hass.config_entries.async_update_entry, entry, data=new_data
-            )
-            _LOGGER.debug("Persisted new auth token for %s", host)
+        if not new_token:
+            return
+
+        def _do_update():
+            """Update config entry on the event loop (thread-safe)."""
+            if new_token != entry.data.get(CONF_TOKEN):
+                new_data = {**entry.data, CONF_TOKEN: new_token}
+                hass.config_entries.async_update_entry(entry, data=new_data)
+                _LOGGER.debug("Persisted new auth token for %s", host)
+
+        hass.loop.call_soon_threadsafe(_do_update)
 
     snapmaker.set_token_update_callback(_on_token_update)
 
