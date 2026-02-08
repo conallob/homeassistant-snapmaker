@@ -10,19 +10,16 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.snapmaker.const import DOMAIN
 from custom_components.snapmaker.sensor import (
-    SnapmakerAirPurifierSensor,
     SnapmakerBedTargetTempSensor,
     SnapmakerBedTempSensor,
     SnapmakerCurrentLineSensor,
     SnapmakerDiagnosticSensor,
-    SnapmakerDoorOpenSensor,
     SnapmakerElapsedTimeSensor,
-    SnapmakerEmergencyStopSensor,
-    SnapmakerEnclosureSensor,
     SnapmakerEstimatedTimeSensor,
-    SnapmakerFilamentOutSensor,
     SnapmakerFileNameSensor,
     SnapmakerHomingSensor,
+    SnapmakerLaserFocalLengthSensor,
+    SnapmakerLaserPowerSensor,
     SnapmakerNozzle1TempSensor,
     SnapmakerNozzle2TempSensor,
     SnapmakerNozzleTargetTempSensor,
@@ -32,7 +29,7 @@ from custom_components.snapmaker.sensor import (
     SnapmakerPositionZSensor,
     SnapmakerProgressSensor,
     SnapmakerRemainingTimeSensor,
-    SnapmakerRotaryModuleSensor,
+    SnapmakerSpindleSpeedSensor,
     SnapmakerStatusSensor,
     SnapmakerToolHeadSensor,
     SnapmakerTotalLinesSensor,
@@ -90,8 +87,8 @@ class TestSensorPlatform:
 
         await async_setup_entry(hass, config_entry, mock_add_entities)
 
-        # 22 common sensors + 2 single nozzle sensors = 24
-        assert len(entities) == 24
+        # 19 common sensors + 2 single nozzle sensors = 21
+        assert len(entities) == 21
         assert any(isinstance(e, SnapmakerStatusSensor) for e in entities)
         assert any(isinstance(e, SnapmakerNozzleTempSensor) for e in entities)
         assert any(isinstance(e, SnapmakerBedTempSensor) for e in entities)
@@ -99,11 +96,11 @@ class TestSensorPlatform:
         assert any(isinstance(e, SnapmakerProgressSensor) for e in entities)
         assert any(isinstance(e, SnapmakerToolHeadSensor) for e in entities)
         assert any(isinstance(e, SnapmakerPositionXSensor) for e in entities)
-        assert any(isinstance(e, SnapmakerFilamentOutSensor) for e in entities)
-        assert any(isinstance(e, SnapmakerDoorOpenSensor) for e in entities)
-        assert any(isinstance(e, SnapmakerEnclosureSensor) for e in entities)
         assert any(isinstance(e, SnapmakerTotalLinesSensor) for e in entities)
         assert any(isinstance(e, SnapmakerDiagnosticSensor) for e in entities)
+        assert any(isinstance(e, SnapmakerSpindleSpeedSensor) for e in entities)
+        assert any(isinstance(e, SnapmakerLaserPowerSensor) for e in entities)
+        assert any(isinstance(e, SnapmakerLaserFocalLengthSensor) for e in entities)
 
     async def test_async_setup_entry_dual_extruder(
         self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
@@ -132,8 +129,8 @@ class TestSensorPlatform:
 
         await async_setup_entry(hass, config_entry, mock_add_entities)
 
-        # 22 common sensors + 4 dual nozzle sensors = 26
-        assert len(entities) == 26
+        # 19 common sensors + 4 dual nozzle sensors = 23
+        assert len(entities) == 23
         assert any(isinstance(e, SnapmakerNozzle1TempSensor) for e in entities)
         assert any(isinstance(e, SnapmakerNozzle2TempSensor) for e in entities)
 
@@ -308,89 +305,7 @@ class TestSensorEntities:
         assert sensor.name == "Homing"
         assert sensor.unique_id == "192.168.1.100_homing"
         assert sensor.state == "N/A"
-        assert sensor.icon == "mdi:home-map-marker"
-
-    def test_filament_out_sensor(self, mock_coordinator, mock_snapmaker_device):
-        """Test filament runout sensor."""
-        sensor = SnapmakerFilamentOutSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-
-        assert sensor.name == "Filament Runout"
-        assert sensor.unique_id == "192.168.1.100_filament_out"
-        assert sensor.state == "No"
-
-        # Test when filament is out
-        mock_snapmaker_device.return_value.data["is_filament_out"] = True
-        assert sensor.state == "Yes"
-
-    def test_door_open_sensor(self, mock_coordinator, mock_snapmaker_device):
-        """Test door open sensor."""
-        sensor = SnapmakerDoorOpenSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-
-        assert sensor.name == "Door Open"
-        assert sensor.unique_id == "192.168.1.100_door_open"
-        assert sensor.state == "Closed"
-        assert sensor.icon == "mdi:door-closed"
-
-        # Test when door is open
-        mock_snapmaker_device.return_value.data["is_door_open"] = True
-        assert sensor.state == "Open"
-        assert sensor.icon == "mdi:door-open"
-
-    def test_enclosure_sensor(self, mock_coordinator, mock_snapmaker_device):
-        """Test enclosure sensor."""
-        sensor = SnapmakerEnclosureSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-
-        assert sensor.name == "Enclosure"
-        assert sensor.unique_id == "192.168.1.100_enclosure"
-        assert sensor.state == "Not Connected"
-
-        mock_snapmaker_device.return_value.data["has_enclosure"] = True
-        assert sensor.state == "Connected"
-
-    def test_rotary_module_sensor(self, mock_coordinator, mock_snapmaker_device):
-        """Test rotary module sensor."""
-        sensor = SnapmakerRotaryModuleSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-
-        assert sensor.name == "Rotary Module"
-        assert sensor.unique_id == "192.168.1.100_rotary_module"
-        assert sensor.state == "Not Connected"
-
-        mock_snapmaker_device.return_value.data["has_rotary_module"] = True
-        assert sensor.state == "Connected"
-
-    def test_emergency_stop_sensor(self, mock_coordinator, mock_snapmaker_device):
-        """Test emergency stop sensor."""
-        sensor = SnapmakerEmergencyStopSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-
-        assert sensor.name == "Emergency Stop Button"
-        assert sensor.unique_id == "192.168.1.100_emergency_stop"
-        assert sensor.state == "Not Connected"
-
-        mock_snapmaker_device.return_value.data["has_emergency_stop"] = True
-        assert sensor.state == "Connected"
-
-    def test_air_purifier_sensor(self, mock_coordinator, mock_snapmaker_device):
-        """Test air purifier sensor."""
-        sensor = SnapmakerAirPurifierSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-
-        assert sensor.name == "Air Purifier"
-        assert sensor.unique_id == "192.168.1.100_air_purifier"
-        assert sensor.state == "Not Connected"
-
-        mock_snapmaker_device.return_value.data["has_air_purifier"] = True
-        assert sensor.state == "Connected"
+        assert sensor.icon == "mdi:home-import-outline"
 
     def test_total_lines_sensor(self, mock_coordinator, mock_snapmaker_device):
         """Test total G-code lines sensor."""
@@ -454,6 +369,67 @@ class TestSensorEntities:
         assert sensor.unique_id == "192.168.1.100_nozzle2_temp"
         assert sensor.native_value == 195.0
 
+    def test_spindle_speed_sensor(self, mock_coordinator, mock_snapmaker_device):
+        """Test CNC spindle speed sensor."""
+        mock_snapmaker_device.return_value.data["spindle_speed"] = 12000
+
+        sensor = SnapmakerSpindleSpeedSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
+
+        assert sensor.name == "Spindle Speed"
+        assert sensor.unique_id == "192.168.1.100_spindle_speed"
+        assert sensor.native_value == 12000
+        assert sensor._attr_native_unit_of_measurement == "RPM"
+        assert sensor.icon == "mdi:rotate-right"
+
+    def test_laser_power_sensor(self, mock_coordinator, mock_snapmaker_device):
+        """Test laser power sensor."""
+        mock_snapmaker_device.return_value.data["laser_power"] = 85
+
+        sensor = SnapmakerLaserPowerSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
+
+        assert sensor.name == "Laser Power"
+        assert sensor.unique_id == "192.168.1.100_laser_power"
+        assert sensor.native_value == 85
+        assert sensor._attr_native_unit_of_measurement == PERCENTAGE
+        assert sensor.icon == "mdi:laser-pointer"
+
+    def test_laser_focal_length_sensor(self, mock_coordinator, mock_snapmaker_device):
+        """Test laser focal length sensor."""
+        mock_snapmaker_device.return_value.data["laser_focal_length"] = 50.0
+
+        sensor = SnapmakerLaserFocalLengthSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
+
+        assert sensor.name == "Laser Focal Length"
+        assert sensor.unique_id == "192.168.1.100_laser_focal_length"
+        assert sensor.native_value == 50.0
+        assert sensor._attr_native_unit_of_measurement == UnitOfLength.MILLIMETERS
+        assert sensor.icon == "mdi:laser-pointer"
+
+    def test_cnc_laser_sensors_none_when_not_available(
+        self, mock_coordinator, mock_snapmaker_device
+    ):
+        """Test CNC/laser sensors return None when data not available."""
+        sensor = SnapmakerSpindleSpeedSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
+        assert sensor.native_value is None
+
+        sensor = SnapmakerLaserPowerSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
+        assert sensor.native_value is None
+
+        sensor = SnapmakerLaserFocalLengthSensor(
+            mock_coordinator, mock_snapmaker_device.return_value
+        )
+        assert sensor.native_value is None
+
     def test_sensor_availability(self, mock_coordinator, mock_snapmaker_device):
         """Test sensor availability based on coordinator and device."""
         sensor = SnapmakerStatusSensor(
@@ -508,8 +484,8 @@ class TestSensorEntities:
             mock_coordinator, mock_snapmaker_device.return_value
         )
 
-        # Should return default value when key is missing
-        assert sensor.native_value == 0
+        # Should return None when key is missing
+        assert sensor.native_value is None
 
         file_sensor = SnapmakerFileNameSensor(
             mock_coordinator, mock_snapmaker_device.return_value
@@ -520,8 +496,3 @@ class TestSensorEntities:
             mock_coordinator, mock_snapmaker_device.return_value
         )
         assert tool_sensor.state == "N/A"
-
-        filament_sensor = SnapmakerFilamentOutSensor(
-            mock_coordinator, mock_snapmaker_device.return_value
-        )
-        assert filament_sensor.state == "No"

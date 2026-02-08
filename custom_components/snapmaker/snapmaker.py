@@ -24,7 +24,12 @@ API_TIMEOUT = 5  # Seconds to wait for HTTP API responses
 API_PORT = 8080  # Default HTTP API port
 TCP_CHECK_TIMEOUT = 1.0  # Seconds to wait for TCP reachability check
 REACHABILITY_MAX_RETRIES = 3  # Max retries for reachability check
-REACHABILITY_BACKOFF_BASE = 2  # Base seconds for exponential backoff
+# Base for exponential backoff (seconds). Kept low because time.sleep()
+# blocks the executor thread during the coordinator update cycle.
+REACHABILITY_BACKOFF_BASE = 1
+
+# Keys to strip from the raw API response before exposing as diagnostic attributes
+SENSITIVE_API_KEYS = {"token"}
 
 
 class SnapmakerDevice:
@@ -69,8 +74,15 @@ class SnapmakerDevice:
 
     @property
     def raw_api_response(self) -> Dict[str, Any]:
-        """Return the raw API response for diagnostic purposes."""
-        return self._raw_api_response
+        """Return the raw API response for diagnostic purposes.
+
+        Sensitive keys (e.g. token) are stripped before returning.
+        """
+        return {
+            k: v
+            for k, v in self._raw_api_response.items()
+            if k not in SENSITIVE_API_KEYS
+        }
 
     @property
     def dual_extruder(self) -> bool:
@@ -91,6 +103,7 @@ class SnapmakerDevice:
 
         Performs a lightweight TCP connection check before attempting
         full HTTP API calls. Uses exponential backoff on retries.
+        Note: time.sleep() blocks the executor thread during retries.
 
         Returns:
             True if the device is reachable, False otherwise.
@@ -116,6 +129,7 @@ class SnapmakerDevice:
                     REACHABILITY_MAX_RETRIES,
                     backoff,
                 )
+                # Blocking sleep - runs in executor thread, not the event loop
                 time.sleep(backoff)
 
         _LOGGER.debug(
@@ -152,7 +166,11 @@ class SnapmakerDevice:
         return self._data
 
     def _set_offline(self) -> None:
-        """Set device to offline state with default values."""
+        """Set device to offline state with default values.
+
+        Uses None for numeric values that are unknown when offline,
+        allowing HA to display "unknown" rather than misleading zeros.
+        """
         self._available = False
         self._status = "OFFLINE"
         self._raw_api_response = {}
@@ -160,19 +178,19 @@ class SnapmakerDevice:
             "ip": self._host,
             "model": self._model or "N/A",
             "status": "OFFLINE",
-            "nozzle_temperature": 0,
-            "nozzle_target_temperature": 0,
-            "heated_bed_temperature": 0,
-            "heated_bed_target_temperature": 0,
+            "nozzle_temperature": None,
+            "nozzle_target_temperature": None,
+            "heated_bed_temperature": None,
+            "heated_bed_target_temperature": None,
             "file_name": "N/A",
-            "progress": 0,
-            "elapsed_time": "00:00:00",
-            "remaining_time": "00:00:00",
-            "estimated_time": "00:00:00",
+            "progress": None,
+            "elapsed_time": "N/A",
+            "remaining_time": "N/A",
+            "estimated_time": "N/A",
             "tool_head": "N/A",
-            "x": 0,
-            "y": 0,
-            "z": 0,
+            "x": None,
+            "y": None,
+            "z": None,
             "homing": "N/A",
             "is_filament_out": False,
             "is_door_open": False,
@@ -180,8 +198,8 @@ class SnapmakerDevice:
             "has_rotary_module": False,
             "has_emergency_stop": False,
             "has_air_purifier": False,
-            "total_lines": 0,
-            "current_line": 0,
+            "total_lines": None,
+            "current_line": None,
         }
 
     def _check_online(self) -> None:
@@ -399,6 +417,15 @@ class SnapmakerDevice:
             raw_toolhead = data.get("toolHead", "")
             tool_head = TOOLHEAD_MAP.get(raw_toolhead, raw_toolhead or "N/A")
 
+            # Log unknown toolhead types for debugging
+            if raw_toolhead and raw_toolhead not in TOOLHEAD_MAP:
+                _LOGGER.warning(
+                    "Unknown toolhead type '%s' from device %s, "
+                    "using raw value as display name",
+                    raw_toolhead,
+                    self._host,
+                )
+
             # Check for dual extruder configuration
             # Dual extruders have nozzle1Temperature and nozzle2Temperature fields
             has_nozzle1 = "nozzle1Temperature" in data
@@ -531,14 +558,13 @@ class SnapmakerDevice:
                     "Token expired or invalid for %s, clearing token", self._host
                 )
                 self._token = None
+                self._set_offline()
             else:
                 _LOGGER.error("HTTP error getting status from Snapmaker: %s", http_err)
-                self._available = False
-                self._status = "OFFLINE"
+                self._set_offline()
         except Exception as err:
             _LOGGER.error("Error getting status from Snapmaker: %s", err)
-            self._available = False
-            self._status = "OFFLINE"
+            self._set_offline()
 
     @staticmethod
     def discover() -> list:

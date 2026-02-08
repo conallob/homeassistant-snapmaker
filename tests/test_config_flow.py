@@ -243,11 +243,14 @@ class TestConfigFlow:
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "pick_device"
 
-        # Get the actual device key from the schema's vol.In options
+        # Get the valid device options from the schema
+        # The schema has vol.Required("device"): vol.In({...})
+        # We need to extract the valid keys from the vol.In validator
         schema = result["data_schema"].schema
-        device_key = list(schema)[0]
-        # The vol.In container holds the valid options
-        valid_options = list(device_key.validators[0].container.keys())
+        for key, validator in schema.items():
+            if str(key) == "device":
+                valid_options = list(validator.container.keys())
+                break
 
         # Configure with a valid device from the discovered options
         result = await hass.config_entries.flow.async_configure(

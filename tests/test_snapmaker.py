@@ -8,6 +8,7 @@ import requests
 from custom_components.snapmaker.snapmaker import (
     API_PORT,
     REACHABILITY_MAX_RETRIES,
+    SENSITIVE_API_KEYS,
     SnapmakerDevice,
 )
 
@@ -42,11 +43,11 @@ class TestSnapmakerDevice:
         assert device.available is False
         assert device.status == "OFFLINE"
         assert result["status"] == "OFFLINE"
-        assert result["nozzle_temperature"] == 0
+        assert result["nozzle_temperature"] is None
         assert result["file_name"] == "N/A"
         assert result["tool_head"] == "N/A"
         assert result["is_filament_out"] is False
-        assert result["total_lines"] == 0
+        assert result["total_lines"] is None
 
     def test_update_online_device(self, mock_socket, mock_requests):
         """Test update when device is online."""
@@ -171,7 +172,7 @@ class TestSnapmakerDevice:
         device._status = "IDLE"
         device._get_status()
 
-        # Toolhead
+        # Toolhead (mapped from TOOLHEAD_3DPRINTING_1)
         assert device.data["tool_head"] == "Extruder"
 
         # Position
@@ -290,6 +291,24 @@ class TestSnapmakerDevice:
         assert raw["toolHead"] == "TOOLHEAD_3DPRINTING_1"
         assert raw["totalLines"] == 10000
 
+    def test_get_status_raw_api_response_filters_sensitive_keys(self, mock_requests):
+        """Test that sensitive keys are filtered from raw API response."""
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "token": "secret-token-value",
+            "nozzleTemperature": 25.0
+        }"""
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token-123"
+        device._available = True
+        device._get_status()
+
+        raw = device.raw_api_response
+        assert "token" not in raw
+        assert raw["status"] == "IDLE"
+        assert raw["nozzleTemperature"] == 25.0
+
     def test_get_status_raw_api_response_cleared_on_offline(self):
         """Test that raw API response is cleared when going offline."""
         device = SnapmakerDevice("192.168.1.100")
@@ -369,8 +388,8 @@ class TestSnapmakerDevice:
             assert device.available is False
             assert device.status == "OFFLINE"
 
-    def test_get_status_401_clears_token(self):
-        """Test that a 401 response clears the token for re-auth."""
+    def test_get_status_401_clears_token_and_sets_offline(self):
+        """Test that a 401 response clears the token and sets device offline."""
         with patch("custom_components.snapmaker.snapmaker.requests") as mock_req:
             # Use the real HTTPError class so except clause can catch it
             mock_req.exceptions.HTTPError = requests.exceptions.HTTPError
@@ -384,9 +403,24 @@ class TestSnapmakerDevice:
             device._available = True
             device._get_status()
 
-            # Token should be cleared but device should not be marked offline
+            # Token should be cleared and device should be set offline
             assert device._token is None
-            assert device._available is True
+            assert device._available is False
+            assert device.status == "OFFLINE"
+
+    def test_get_status_unknown_toolhead_logs_warning(self, mock_requests):
+        """Test that unknown toolhead types are logged."""
+        mock_requests.get.return_value.text = (
+            '{"status": "IDLE", "toolHead": "TOOLHEAD_FUTURE_V3"}'
+        )
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token-123"
+        device._available = True
+        device._get_status()
+
+        # Unknown toolhead should use raw value as display name
+        assert device.data["tool_head"] == "TOOLHEAD_FUTURE_V3"
 
     def test_discover_devices(self, mock_socket):
         """Test static discover method."""
@@ -436,7 +470,7 @@ class TestSnapmakerDevice:
             socket_instance.close.assert_called_once()
 
     def test_set_offline(self):
-        """Test _set_offline method."""
+        """Test _set_offline method uses None for unknown numeric values."""
         device = SnapmakerDevice("192.168.1.100")
         device._model = "Snapmaker A350"
         device._set_offline()
@@ -446,11 +480,17 @@ class TestSnapmakerDevice:
         assert device.data["status"] == "OFFLINE"
         assert device.data["ip"] == "192.168.1.100"
         assert device.data["model"] == "Snapmaker A350"
-        assert device.data["nozzle_temperature"] == 0
+        assert device.data["nozzle_temperature"] is None
+        assert device.data["heated_bed_temperature"] is None
+        assert device.data["progress"] is None
+        assert device.data["x"] is None
+        assert device.data["y"] is None
+        assert device.data["z"] is None
+        assert device.data["total_lines"] is None
+        assert device.data["current_line"] is None
         assert device.data["file_name"] == "N/A"
         assert device.data["tool_head"] == "N/A"
         assert device.data["is_filament_out"] is False
-        assert device.data["total_lines"] == 0
         assert device.raw_api_response == {}
 
     def test_check_online_malformed_response(self, mock_socket):
@@ -606,8 +646,8 @@ class TestTCPReachability:
             device = SnapmakerDevice("192.168.1.100")
             device._check_reachable()
 
-            # Backoff: 2^0=1, 2^1=2 (for 3 retries, 2 sleeps)
-            expected_sleeps = [call(1), call(2)]
+            # Backoff with base=1: 1^0=1, 1^1=1 (for 3 retries, 2 sleeps)
+            expected_sleeps = [call(1), call(1)]
             assert mock_sleep.call_args_list == expected_sleeps
 
 
@@ -646,3 +686,25 @@ class TestTokenPersistence:
 
         device._token = "new-token"
         assert device.token == "new-token"
+
+
+class TestSensitiveKeyFiltering:
+    """Test that sensitive keys are filtered from diagnostic output."""
+
+    def test_sensitive_api_keys_contains_token(self):
+        """Test that SENSITIVE_API_KEYS includes 'token'."""
+        assert "token" in SENSITIVE_API_KEYS
+
+    def test_raw_api_response_property_filters_keys(self):
+        """Test that the raw_api_response property filters sensitive keys."""
+        device = SnapmakerDevice("192.168.1.100")
+        device._raw_api_response = {
+            "status": "IDLE",
+            "token": "secret-value",
+            "nozzleTemperature": 25.0,
+        }
+
+        filtered = device.raw_api_response
+        assert "token" not in filtered
+        assert filtered["status"] == "IDLE"
+        assert filtered["nozzleTemperature"] == 25.0

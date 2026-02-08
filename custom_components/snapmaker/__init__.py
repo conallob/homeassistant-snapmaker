@@ -14,7 +14,7 @@ from .snapmaker import SnapmakerDevice
 _LOGGER = logging.getLogger(__name__)
 
 # List of platforms to support
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
@@ -31,12 +31,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     saved_token = entry.data.get(CONF_TOKEN)
     snapmaker = SnapmakerDevice(host, token=saved_token)
 
-    # Set up token persistence callback
+    # Set up token persistence callback.
+    # This callback is invoked from an executor thread (via snapmaker.update()),
+    # so we must use call_soon_threadsafe to schedule the HA config entry update
+    # on the event loop.
     def _on_token_update(new_token: str) -> None:
-        """Persist new token to config entry data."""
+        """Persist new token to config entry data (called from executor thread)."""
         if new_token and new_token != entry.data.get(CONF_TOKEN):
             new_data = {**entry.data, CONF_TOKEN: new_token}
-            hass.config_entries.async_update_entry(entry, data=new_data)
+            hass.loop.call_soon_threadsafe(
+                hass.config_entries.async_update_entry, entry, data=new_data
+            )
             _LOGGER.debug("Persisted new auth token for %s", host)
 
     snapmaker.set_token_update_callback(_on_token_update)

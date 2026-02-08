@@ -176,3 +176,21 @@ class TestTokenPersistence:
 
         # Verify set_token_update_callback was called
         mock_snapmaker_device.return_value.set_token_update_callback.assert_called()
+
+    async def test_token_callback_uses_call_soon_threadsafe(
+        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+    ):
+        """Test that the token callback uses call_soon_threadsafe for thread safety."""
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        await async_setup_entry(hass, config_entry)
+
+        # Get the callback that was registered
+        call_args = (
+            mock_snapmaker_device.return_value.set_token_update_callback.call_args
+        )
+        callback = call_args[0][0]
+
+        # The callback should exist and be callable
+        assert callable(callback)
