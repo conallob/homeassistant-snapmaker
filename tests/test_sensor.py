@@ -85,7 +85,7 @@ class TestSensorPlatform:
 
         entities = []
 
-        async def mock_add_entities(new_entities):
+        def mock_add_entities(new_entities):
             entities.extend(new_entities)
 
         await async_setup_entry(hass, config_entry, mock_add_entities)
@@ -127,7 +127,7 @@ class TestSensorPlatform:
 
         entities = []
 
-        async def mock_add_entities(new_entities):
+        def mock_add_entities(new_entities):
             entities.extend(new_entities)
 
         await async_setup_entry(hass, config_entry, mock_add_entities)

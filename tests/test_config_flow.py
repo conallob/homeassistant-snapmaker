@@ -236,17 +236,23 @@ class TestConfigFlow:
             context={"source": config_entries.SOURCE_USER},
         )
 
-        # Start pick_device step
+        # Start pick_device step via the flow instance
         flow = hass.config_entries.flow._progress[result["flow_id"]]
         result = await flow.async_step_pick_device()
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "pick_device"
 
-        # Configure with selected device
+        # Get the actual device key from the schema's vol.In options
+        schema = result["data_schema"].schema
+        device_key = list(schema)[0]
+        # The vol.In container holds the valid options
+        valid_options = list(device_key.validators[0].container.keys())
+
+        # Configure with a valid device from the discovered options
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {"device": "192.168.1.100"},
+            {"device": valid_options[0]},
         )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY

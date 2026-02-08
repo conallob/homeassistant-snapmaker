@@ -96,7 +96,11 @@ def mock_socket():
 @pytest.fixture
 def mock_requests():
     """Mock requests for HTTP communication."""
+    import requests as real_requests
+
     with patch("custom_components.snapmaker.snapmaker.requests") as mock:
+        # Preserve real exception classes so except clauses work
+        mock.exceptions = real_requests.exceptions
         # Mock connect response
         connect_response = MagicMock()
         connect_response.text = '{"token": "test-token-123"}'

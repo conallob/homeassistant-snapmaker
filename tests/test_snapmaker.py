@@ -349,35 +349,42 @@ class TestSnapmakerDevice:
         assert device.available is False
         assert device.status == "OFFLINE"
 
-    def test_get_status_http_error(self, mock_requests):
+    def test_get_status_http_error(self):
         """Test status retrieval with HTTP error."""
-        mock_requests.get.return_value.raise_for_status.side_effect = Exception(
-            "HTTP Error"
-        )
+        with patch("custom_components.snapmaker.snapmaker.requests") as mock_req:
+            # Use the real HTTPError class so except clause can catch it
+            mock_req.exceptions.HTTPError = requests.exceptions.HTTPError
+            error = requests.exceptions.HTTPError("HTTP Error")
+            error.response = MagicMock()
+            error.response.status_code = 500
+            mock_req.get.return_value.raise_for_status.side_effect = error
 
-        device = SnapmakerDevice("192.168.1.100")
-        device._token = "test-token-123"
-        device._available = True
-        device._get_status()
+            device = SnapmakerDevice("192.168.1.100")
+            device._token = "test-token-123"
+            device._available = True
+            device._get_status()
 
-        assert device.available is False
-        assert device.status == "OFFLINE"
+            assert device.available is False
+            assert device.status == "OFFLINE"
 
-    def test_get_status_401_clears_token(self, mock_requests):
+    def test_get_status_401_clears_token(self):
         """Test that a 401 response clears the token for re-auth."""
-        http_error = requests.exceptions.HTTPError()
-        http_error.response = MagicMock()
-        http_error.response.status_code = 401
-        mock_requests.get.return_value.raise_for_status.side_effect = http_error
+        with patch("custom_components.snapmaker.snapmaker.requests") as mock_req:
+            # Use the real HTTPError class so except clause can catch it
+            mock_req.exceptions.HTTPError = requests.exceptions.HTTPError
+            error = requests.exceptions.HTTPError("Unauthorized")
+            error.response = MagicMock()
+            error.response.status_code = 401
+            mock_req.get.return_value.raise_for_status.side_effect = error
 
-        device = SnapmakerDevice("192.168.1.100")
-        device._token = "test-token-123"
-        device._available = True
-        device._get_status()
+            device = SnapmakerDevice("192.168.1.100")
+            device._token = "test-token-123"
+            device._available = True
+            device._get_status()
 
-        # Token should be cleared but device should not be marked offline
-        assert device._token is None
-        assert device._available is True
+            # Token should be cleared but device should not be marked offline
+            assert device._token is None
+            assert device._available is True
 
     def test_discover_devices(self, mock_socket):
         """Test static discover method."""
