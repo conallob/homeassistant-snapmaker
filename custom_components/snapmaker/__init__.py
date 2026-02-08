@@ -8,7 +8,7 @@ from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import CONF_TOKEN, DOMAIN
 from .snapmaker import SnapmakerDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +27,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Snapmaker from a config entry."""
     host = entry.data[CONF_HOST]
 
-    snapmaker = SnapmakerDevice(host)
+    # Restore persisted token if available
+    saved_token = entry.data.get(CONF_TOKEN)
+    snapmaker = SnapmakerDevice(host, token=saved_token)
+
+    # Set up token persistence callback
+    def _on_token_update(new_token: str) -> None:
+        """Persist new token to config entry data."""
+        if new_token and new_token != entry.data.get(CONF_TOKEN):
+            new_data = {**entry.data, CONF_TOKEN: new_token}
+            hass.config_entries.async_update_entry(entry, data=new_data)
+            _LOGGER.debug("Persisted new auth token for %s", host)
+
+    snapmaker.set_token_update_callback(_on_token_update)
 
     async def async_update_data():
         """Fetch data from the Snapmaker device."""

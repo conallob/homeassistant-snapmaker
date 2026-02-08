@@ -5,9 +5,11 @@ import json
 import logging
 import socket
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import requests
+
+from .const import TOOLHEAD_MAP
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,20 +21,26 @@ MAX_RETRIES = 5  # Number of discovery attempts before marking device offline
 RETRY_DELAY = 0.5  # Seconds to wait between discovery retry attempts
 BUFFER_SIZE = 1024  # UDP receive buffer size in bytes
 API_TIMEOUT = 5  # Seconds to wait for HTTP API responses
+API_PORT = 8080  # Default HTTP API port
+TCP_CHECK_TIMEOUT = 1.0  # Seconds to wait for TCP reachability check
+REACHABILITY_MAX_RETRIES = 3  # Max retries for reachability check
+REACHABILITY_BACKOFF_BASE = 2  # Base seconds for exponential backoff
 
 
 class SnapmakerDevice:
     """Class to communicate with a Snapmaker device."""
 
-    def __init__(self, host: str):
+    def __init__(self, host: str, token: Optional[str] = None):
         """Initialize the Snapmaker device."""
         self._host = host
-        self._token = None
-        self._data = {}
+        self._token = token
+        self._data: Dict[str, Any] = {}
+        self._raw_api_response: Dict[str, Any] = {}
         self._available = False
         self._model = None
         self._status = "OFFLINE"
         self._dual_extruder = False
+        self._on_token_update: Optional[Callable[[str], None]] = None
 
     @property
     def host(self) -> str:
@@ -60,9 +68,63 @@ class SnapmakerDevice:
         return self._data
 
     @property
+    def raw_api_response(self) -> Dict[str, Any]:
+        """Return the raw API response for diagnostic purposes."""
+        return self._raw_api_response
+
+    @property
     def dual_extruder(self) -> bool:
         """Return True if device has dual extruder."""
         return self._dual_extruder
+
+    @property
+    def token(self) -> Optional[str]:
+        """Return the current authentication token."""
+        return self._token
+
+    def set_token_update_callback(self, callback: Callable[[str], None]) -> None:
+        """Set callback to be called when token is updated."""
+        self._on_token_update = callback
+
+    def _check_reachable(self) -> bool:
+        """Check if the device API port is reachable via TCP.
+
+        Performs a lightweight TCP connection check before attempting
+        full HTTP API calls. Uses exponential backoff on retries.
+
+        Returns:
+            True if the device is reachable, False otherwise.
+        """
+        for attempt in range(REACHABILITY_MAX_RETRIES):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(TCP_CHECK_TIMEOUT)
+                result = sock.connect_ex((self._host, API_PORT))
+                sock.close()
+                if result == 0:
+                    return True
+            except OSError:
+                pass
+
+            if attempt < REACHABILITY_MAX_RETRIES - 1:
+                backoff = REACHABILITY_BACKOFF_BASE ** attempt
+                _LOGGER.debug(
+                    "TCP check failed for %s:%d (attempt %d/%d), retrying in %ds",
+                    self._host,
+                    API_PORT,
+                    attempt + 1,
+                    REACHABILITY_MAX_RETRIES,
+                    backoff,
+                )
+                time.sleep(backoff)
+
+        _LOGGER.debug(
+            "Device %s:%d not reachable after %d TCP checks",
+            self._host,
+            API_PORT,
+            REACHABILITY_MAX_RETRIES,
+        )
+        return False
 
     def update(self) -> Dict[str, Any]:
         """Update device data."""
@@ -71,6 +133,16 @@ class SnapmakerDevice:
 
         # If device is online and we have a token, get detailed status
         if self._available and self._status != "OFFLINE":
+            # TCP reachability pre-check before making HTTP calls
+            if not self._check_reachable():
+                _LOGGER.warning(
+                    "Device %s discovered but API port %d not reachable",
+                    self._host,
+                    API_PORT,
+                )
+                self._set_offline()
+                return self._data
+
             if not self._token:
                 self._token = self._get_token()
 
@@ -83,6 +155,7 @@ class SnapmakerDevice:
         """Set device to offline state with default values."""
         self._available = False
         self._status = "OFFLINE"
+        self._raw_api_response = {}
         self._data = {
             "ip": self._host,
             "model": self._model or "N/A",
@@ -95,6 +168,20 @@ class SnapmakerDevice:
             "progress": 0,
             "elapsed_time": "00:00:00",
             "remaining_time": "00:00:00",
+            "estimated_time": "00:00:00",
+            "tool_head": "N/A",
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "homing": "N/A",
+            "is_filament_out": False,
+            "is_door_open": False,
+            "has_enclosure": False,
+            "has_rotary_module": False,
+            "has_emergency_stop": False,
+            "has_air_purifier": False,
+            "total_lines": 0,
+            "current_line": 0,
         }
 
     def _check_online(self) -> None:
@@ -224,7 +311,7 @@ class SnapmakerDevice:
             Optional[str]: Authentication token if successful, None otherwise
         """
         try:
-            url = f"http://{self._host}:8080/api/v1/connect"
+            url = f"http://{self._host}:{API_PORT}/api/v1/connect"
 
             # First request to initiate connection
             response = requests.post(url, timeout=API_TIMEOUT)
@@ -256,6 +343,9 @@ class SnapmakerDevice:
                 response_data = json.loads(response.text)
                 if response_data.get("token") == token:
                     _LOGGER.info("Successfully connected to Snapmaker")
+                    # Notify callback about new token for persistence
+                    if self._on_token_update:
+                        self._on_token_update(token)
                     return token
             except (json.JSONDecodeError, ValueError) as json_err:
                 _LOGGER.error("Failed to parse token validation response: %s", json_err)
@@ -273,7 +363,7 @@ class SnapmakerDevice:
     def _get_status(self) -> None:
         """Get status from Snapmaker device."""
         try:
-            url = f"http://{self._host}:8080/api/v1/status?token={self._token}"
+            url = f"http://{self._host}:{API_PORT}/api/v1/status?token={self._token}"
             response = requests.get(url, timeout=API_TIMEOUT)
 
             # Check if response is valid
@@ -299,14 +389,31 @@ class SnapmakerDevice:
                 self._status = "OFFLINE"
                 return
 
+            # Store the raw API response for diagnostic purposes
+            self._raw_api_response = data
+
             # Extract status data
             status = data.get("status")
+
+            # Determine toolhead type
+            raw_toolhead = data.get("toolHead", "")
+            tool_head = TOOLHEAD_MAP.get(raw_toolhead, raw_toolhead or "N/A")
 
             # Check for dual extruder configuration
             # Dual extruders have nozzle1Temperature and nozzle2Temperature fields
             has_nozzle1 = "nozzle1Temperature" in data
             has_nozzle2 = "nozzle2Temperature" in data
             self._dual_extruder = has_nozzle1 and has_nozzle2
+
+            # If toolhead is 3D printing v1 but no single nozzleTemperature,
+            # it's a dual extruder
+            if (
+                raw_toolhead == "TOOLHEAD_3DPRINTING_1"
+                and "nozzleTemperature" not in data
+                and has_nozzle1
+            ):
+                self._dual_extruder = True
+                tool_head = "Dual Extruder"
 
             # Extract temperature data based on configuration
             if self._dual_extruder:
@@ -324,7 +431,7 @@ class SnapmakerDevice:
             bed_temp = data.get("heatedBedTemperature", 0)
             bed_target_temp = data.get("heatedBedTargetTemperature", 0)
 
-            # Extract optional data
+            # Extract print job data
             file_name = data.get("fileName", "N/A")
             progress = 0
             if data.get("progress") is not None:
@@ -338,6 +445,33 @@ class SnapmakerDevice:
             if data.get("remainingTime") is not None:
                 remaining_time = str(timedelta(seconds=data.get("remainingTime")))
 
+            estimated_time = "00:00:00"
+            if data.get("estimatedTime") is not None:
+                estimated_time = str(timedelta(seconds=data.get("estimatedTime")))
+
+            # Extract position data
+            x = data.get("x", 0)
+            y = data.get("y", 0)
+            z = data.get("z", 0)
+            homing = data.get("homing", "N/A")
+
+            # Extract module/safety data
+            is_filament_out = data.get("isFilamentOut", False)
+            is_door_open = data.get("isDoorOpen", False)
+            has_enclosure = data.get("enclosure", False)
+            has_rotary_module = data.get("rotaryModule", False)
+            has_emergency_stop = data.get("emergencyStop", False)
+            has_air_purifier = data.get("airPurifier", False)
+
+            # Extract G-code line progress
+            total_lines = data.get("totalLines", 0)
+            current_line = data.get("currentLine", 0)
+
+            # Extract CNC/Laser specific data
+            spindle_speed = data.get("spindleSpeed")
+            laser_power = data.get("laserPower")
+            laser_focal_length = data.get("laserFocalLength")
+
             # Update device data
             self._status = status
             update_dict = {
@@ -348,7 +482,29 @@ class SnapmakerDevice:
                 "progress": progress,
                 "elapsed_time": elapsed_time,
                 "remaining_time": remaining_time,
+                "estimated_time": estimated_time,
+                "tool_head": tool_head,
+                "x": x,
+                "y": y,
+                "z": z,
+                "homing": homing,
+                "is_filament_out": is_filament_out,
+                "is_door_open": is_door_open,
+                "has_enclosure": has_enclosure,
+                "has_rotary_module": has_rotary_module,
+                "has_emergency_stop": has_emergency_stop,
+                "has_air_purifier": has_air_purifier,
+                "total_lines": total_lines,
+                "current_line": current_line,
             }
+
+            # Add CNC/Laser specific data only when relevant
+            if spindle_speed is not None:
+                update_dict["spindle_speed"] = spindle_speed
+            if laser_power is not None:
+                update_dict["laser_power"] = laser_power
+            if laser_focal_length is not None:
+                update_dict["laser_focal_length"] = laser_focal_length
 
             # Add nozzle data based on configuration
             if self._dual_extruder:
@@ -369,6 +525,16 @@ class SnapmakerDevice:
                 )
 
             self._data.update(update_dict)
+        except requests.exceptions.HTTPError as http_err:
+            if http_err.response is not None and http_err.response.status_code == 401:
+                _LOGGER.warning(
+                    "Token expired or invalid for %s, clearing token", self._host
+                )
+                self._token = None
+            else:
+                _LOGGER.error("HTTP error getting status from Snapmaker: %s", http_err)
+                self._available = False
+                self._status = "OFFLINE"
         except Exception as err:
             _LOGGER.error("Error getting status from Snapmaker: %s", err)
             self._available = False
