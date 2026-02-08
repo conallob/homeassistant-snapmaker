@@ -243,19 +243,12 @@ class TestConfigFlow:
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "pick_device"
 
-        # Get the valid device options from the schema
-        # The schema has vol.Required("device"): vol.In({...})
-        # We need to extract the valid keys from the vol.In validator
-        schema = result["data_schema"].schema
-        for key, validator in schema.items():
-            if str(key) == "device":
-                valid_options = list(validator.container.keys())
-                break
-
-        # Configure with a valid device from the discovered options
+        # Configure with the discovered device IP directly.
+        # The schema uses vol.In() with the discovered device IPs as keys,
+        # so we pass the known discovered IP from mock_discovery.
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {"device": valid_options[0]},
+            {"device": "192.168.1.100"},
         )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
