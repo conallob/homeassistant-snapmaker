@@ -52,10 +52,19 @@ async def async_setup_entry(
         SnapmakerTotalLinesSensor(coordinator, device),
         SnapmakerCurrentLineSensor(coordinator, device),
         SnapmakerDiagnosticSensor(coordinator, device),
-        SnapmakerSpindleSpeedSensor(coordinator, device),
-        SnapmakerLaserPowerSensor(coordinator, device),
-        SnapmakerLaserFocalLengthSensor(coordinator, device),
     ]
+
+    # Add CNC/Laser sensors only when the matching toolhead is detected
+    tool_head = device.data.get("tool_head", "N/A")
+    if tool_head == "CNC":
+        entities.append(SnapmakerSpindleSpeedSensor(coordinator, device))
+    if tool_head in ("Laser",):
+        entities.extend(
+            [
+                SnapmakerLaserPowerSensor(coordinator, device),
+                SnapmakerLaserFocalLengthSensor(coordinator, device),
+            ]
+        )
 
     # Add nozzle sensors based on extruder configuration
     if device.dual_extruder:
@@ -500,6 +509,7 @@ class SnapmakerSpindleSpeedSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Spindle Speed"
         self._attr_unique_id = f"{self._device.host}_spindle_speed"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "RPM"
         self._attr_icon = "mdi:rotate-right"
@@ -518,6 +528,7 @@ class SnapmakerLaserPowerSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Laser Power"
         self._attr_unique_id = f"{self._device.host}_laser_power"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_icon = "mdi:laser-pointer"
@@ -536,6 +547,7 @@ class SnapmakerLaserFocalLengthSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Laser Focal Length"
         self._attr_unique_id = f"{self._device.host}_laser_focal_length"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
         self._attr_icon = "mdi:laser-pointer"

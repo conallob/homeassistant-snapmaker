@@ -458,6 +458,15 @@ class SnapmakerDevice:
             ):
                 self._dual_extruder = True
                 tool_head = "Dual Extruder"
+                _LOGGER.debug(
+                    "Dual extruder fallback triggered for %s: "
+                    "toolHead=%s, nozzleTemperature absent, "
+                    "nozzle1Temperature present=%s, nozzle2Temperature present=%s",
+                    self._host,
+                    raw_toolhead,
+                    has_nozzle1,
+                    has_nozzle2,
+                )
 
             if self._dual_extruder:
                 _LOGGER.debug("Detected dual extruder configuration for %s", self._host)
