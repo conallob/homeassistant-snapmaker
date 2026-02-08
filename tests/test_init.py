@@ -150,9 +150,7 @@ class TestTokenPersistence:
         await async_setup_entry(hass, config_entry)
 
         # Verify SnapmakerDevice was created with the saved token
-        mock_snapmaker_device.assert_any_call(
-            "192.168.1.100", token="saved-token-abc"
-        )
+        mock_snapmaker_device.assert_any_call("192.168.1.100", token="saved-token-abc")
 
     async def test_setup_without_token(
         self, hass: HomeAssistant, config_entry, mock_snapmaker_device

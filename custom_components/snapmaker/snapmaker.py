@@ -107,7 +107,7 @@ class SnapmakerDevice:
                 pass
 
             if attempt < REACHABILITY_MAX_RETRIES - 1:
-                backoff = REACHABILITY_BACKOFF_BASE ** attempt
+                backoff = REACHABILITY_BACKOFF_BASE**attempt
                 _LOGGER.debug(
                     "TCP check failed for %s:%d (attempt %d/%d), retrying in %ds",
                     self._host,

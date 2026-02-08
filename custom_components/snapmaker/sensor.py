@@ -547,7 +547,11 @@ class SnapmakerEnclosureSensor(SnapmakerSensorBase):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        return "Connected" if self._device.data.get("has_enclosure", False) else "Not Connected"
+        return (
+            "Connected"
+            if self._device.data.get("has_enclosure", False)
+            else "Not Connected"
+        )
 
 
 class SnapmakerRotaryModuleSensor(SnapmakerSensorBase):
@@ -564,7 +568,11 @@ class SnapmakerRotaryModuleSensor(SnapmakerSensorBase):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        return "Connected" if self._device.data.get("has_rotary_module", False) else "Not Connected"
+        return (
+            "Connected"
+            if self._device.data.get("has_rotary_module", False)
+            else "Not Connected"
+        )
 
 
 class SnapmakerEmergencyStopSensor(SnapmakerSensorBase):
@@ -581,7 +589,11 @@ class SnapmakerEmergencyStopSensor(SnapmakerSensorBase):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        return "Connected" if self._device.data.get("has_emergency_stop", False) else "Not Connected"
+        return (
+            "Connected"
+            if self._device.data.get("has_emergency_stop", False)
+            else "Not Connected"
+        )
 
 
 class SnapmakerAirPurifierSensor(SnapmakerSensorBase):
@@ -598,7 +610,11 @@ class SnapmakerAirPurifierSensor(SnapmakerSensorBase):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        return "Connected" if self._device.data.get("has_air_purifier", False) else "Not Connected"
+        return (
+            "Connected"
+            if self._device.data.get("has_air_purifier", False)
+            else "Not Connected"
+        )
 
 
 # --- Diagnostic sensor with raw API response ---

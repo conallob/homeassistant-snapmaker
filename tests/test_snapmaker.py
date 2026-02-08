@@ -207,14 +207,16 @@ class TestSnapmakerDevice:
         ]
 
         for raw_toolhead, expected_name in test_cases:
-            mock_requests.get.return_value.text = f'{{"status": "IDLE", "toolHead": "{raw_toolhead}"}}'
+            mock_requests.get.return_value.text = (
+                f'{{"status": "IDLE", "toolHead": "{raw_toolhead}"}}'
+            )
             device = SnapmakerDevice("192.168.1.100")
             device._token = "test-token-123"
             device._available = True
             device._get_status()
-            assert device.data["tool_head"] == expected_name, (
-                f"Expected {expected_name} for {raw_toolhead}"
-            )
+            assert (
+                device.data["tool_head"] == expected_name
+            ), f"Expected {expected_name} for {raw_toolhead}"
 
     def test_get_status_dual_extruder_detection_via_toolhead(self, mock_requests):
         """Test dual extruder detection when toolhead is 3D printing but no single nozzle temp."""
@@ -530,11 +532,12 @@ class TestTCPReachability:
 
     def test_check_reachable_failure_all_retries(self):
         """Test TCP check fails after all retries."""
-        with patch(
-            "custom_components.snapmaker.snapmaker.socket.socket"
-        ) as mock_socket_class, patch(
-            "custom_components.snapmaker.snapmaker.time.sleep"
-        ) as mock_sleep:
+        with (
+            patch(
+                "custom_components.snapmaker.snapmaker.socket.socket"
+            ) as mock_socket_class,
+            patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep,
+        ):
             sock = MagicMock()
             sock.connect_ex.return_value = 1  # Connection refused
             mock_socket_class.return_value = sock
@@ -547,10 +550,11 @@ class TestTCPReachability:
 
     def test_check_reachable_succeeds_on_retry(self):
         """Test TCP check succeeds on second attempt."""
-        with patch(
-            "custom_components.snapmaker.snapmaker.socket.socket"
-        ) as mock_socket_class, patch(
-            "custom_components.snapmaker.snapmaker.time.sleep"
+        with (
+            patch(
+                "custom_components.snapmaker.snapmaker.socket.socket"
+            ) as mock_socket_class,
+            patch("custom_components.snapmaker.snapmaker.time.sleep"),
         ):
             sock = MagicMock()
             sock.connect_ex.side_effect = [1, 0]  # Fail first, succeed second
@@ -562,10 +566,11 @@ class TestTCPReachability:
 
     def test_check_reachable_os_error(self):
         """Test TCP check handles OSError gracefully."""
-        with patch(
-            "custom_components.snapmaker.snapmaker.socket.socket"
-        ) as mock_socket_class, patch(
-            "custom_components.snapmaker.snapmaker.time.sleep"
+        with (
+            patch(
+                "custom_components.snapmaker.snapmaker.socket.socket"
+            ) as mock_socket_class,
+            patch("custom_components.snapmaker.snapmaker.time.sleep"),
         ):
             sock = MagicMock()
             sock.connect_ex.side_effect = OSError("Network unreachable")
@@ -577,9 +582,7 @@ class TestTCPReachability:
     def test_update_skips_api_when_unreachable(self, mock_socket):
         """Test that update skips API calls when TCP check fails."""
         # Discovery succeeds but TCP check fails
-        with patch(
-            "custom_components.snapmaker.snapmaker.time.sleep"
-        ):
+        with patch("custom_components.snapmaker.snapmaker.time.sleep"):
             mock_socket.connect_ex.return_value = 1  # TCP check fails
 
             device = SnapmakerDevice("192.168.1.100")
@@ -590,11 +593,12 @@ class TestTCPReachability:
 
     def test_check_reachable_exponential_backoff(self):
         """Test that exponential backoff is used between retries."""
-        with patch(
-            "custom_components.snapmaker.snapmaker.socket.socket"
-        ) as mock_socket_class, patch(
-            "custom_components.snapmaker.snapmaker.time.sleep"
-        ) as mock_sleep:
+        with (
+            patch(
+                "custom_components.snapmaker.snapmaker.socket.socket"
+            ) as mock_socket_class,
+            patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep,
+        ):
             sock = MagicMock()
             sock.connect_ex.return_value = 1
             mock_socket_class.return_value = sock
