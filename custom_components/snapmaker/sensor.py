@@ -54,11 +54,13 @@ async def async_setup_entry(
         SnapmakerDiagnosticSensor(coordinator, device),
     ]
 
-    # Add CNC/Laser sensors only when the matching toolhead is detected
-    tool_head = device.data.get("tool_head", "N/A")
+    # Add CNC/Laser sensors only when the matching toolhead is detected.
+    # Uses the stable toolhead_type property which persists across offline states,
+    # unlike device.data["tool_head"] which resets to "N/A" when offline.
+    tool_head = device.toolhead_type
     if tool_head == "CNC":
         entities.append(SnapmakerSpindleSpeedSensor(coordinator, device))
-    if tool_head in ("Laser",):
+    if tool_head == "Laser":
         entities.extend(
             [
                 SnapmakerLaserPowerSensor(coordinator, device),

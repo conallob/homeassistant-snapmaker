@@ -48,6 +48,7 @@ class SnapmakerDevice:
         self._model = None
         self._status = "OFFLINE"
         self._dual_extruder = False
+        self._toolhead_type: Optional[str] = None
         self._on_token_update: Optional[Callable[[str], None]] = None
 
     @property
@@ -91,6 +92,11 @@ class SnapmakerDevice:
     def dual_extruder(self) -> bool:
         """Return True if device has dual extruder."""
         return self._dual_extruder
+
+    @property
+    def toolhead_type(self) -> Optional[str]:
+        """Return the toolhead type (persists across offline states)."""
+        return self._toolhead_type
 
     @property
     def token(self) -> Optional[str]:
@@ -470,6 +476,10 @@ class SnapmakerDevice:
 
             if self._dual_extruder:
                 _LOGGER.debug("Detected dual extruder configuration for %s", self._host)
+
+            # Persist toolhead type so it survives offline periods
+            if tool_head and tool_head != "N/A":
+                self._toolhead_type = tool_head
 
             # Extract temperature data based on configuration
             if self._dual_extruder:
