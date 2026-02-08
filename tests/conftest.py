@@ -15,6 +15,14 @@ def mock_snapmaker_device():
     device.status = "IDLE"
     device.available = True
     device.dual_extruder = False
+    device.token = None
+    device.raw_api_response = {
+        "status": "IDLE",
+        "nozzleTemperature": 25.0,
+        "nozzleTargetTemperature": 0.0,
+        "heatedBedTemperature": 23.0,
+        "heatedBedTargetTemperature": 0.0,
+    }
     device.data = {
         "ip": "192.168.1.100",
         "model": "Snapmaker A350",
@@ -27,6 +35,20 @@ def mock_snapmaker_device():
         "progress": 0,
         "elapsed_time": "00:00:00",
         "remaining_time": "00:00:00",
+        "estimated_time": "00:00:00",
+        "tool_head": "Extruder",
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "homing": "N/A",
+        "is_filament_out": False,
+        "is_door_open": False,
+        "has_enclosure": False,
+        "has_rotary_module": False,
+        "has_emergency_stop": False,
+        "has_air_purifier": False,
+        "total_lines": 0,
+        "current_line": 0,
     }
     device.update.return_value = device.data
 
@@ -65,6 +87,8 @@ def mock_socket():
             b"IP@192.168.1.100|Model:Snapmaker A350|Status:IDLE",
             ("192.168.1.100", 20054),
         )
+        # Default: TCP check succeeds
+        socket_instance.connect_ex.return_value = 0
         mock.return_value = socket_instance
         yield socket_instance
 
@@ -72,15 +96,20 @@ def mock_socket():
 @pytest.fixture
 def mock_requests():
     """Mock requests for HTTP communication."""
+    import requests as real_requests
+
     with patch("custom_components.snapmaker.snapmaker.requests") as mock:
+        # Preserve real exception classes so except clauses work
+        mock.exceptions = real_requests.exceptions
         # Mock connect response
         connect_response = MagicMock()
         connect_response.text = '{"token": "test-token-123"}'
 
-        # Mock status response
+        # Mock status response with all fields
         status_response = MagicMock()
         status_response.text = """{
             "status": "IDLE",
+            "toolHead": "TOOLHEAD_3DPRINTING_1",
             "nozzleTemperature": 25.0,
             "nozzleTargetTemperature": 0.0,
             "heatedBedTemperature": 23.0,
@@ -88,7 +117,20 @@ def mock_requests():
             "fileName": "test.gcode",
             "progress": 0.5,
             "elapsedTime": 300,
-            "remainingTime": 300
+            "remainingTime": 300,
+            "estimatedTime": 600,
+            "x": 100.5,
+            "y": 200.3,
+            "z": 10.0,
+            "homing": "XYZ",
+            "isFilamentOut": false,
+            "isDoorOpen": false,
+            "enclosure": true,
+            "rotaryModule": false,
+            "emergencyStop": true,
+            "airPurifier": false,
+            "totalLines": 10000,
+            "currentLine": 5000
         }"""
 
         mock.post.return_value = connect_response

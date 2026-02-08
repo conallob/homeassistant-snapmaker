@@ -5,6 +5,18 @@ DOMAIN = "snapmaker"
 # Default values
 DEFAULT_NAME = "Snapmaker"
 
+# Configuration keys
+CONF_TOKEN = "token"
+
+# Toolhead types
+TOOLHEAD_MAP = {
+    "TOOLHEAD_3DPRINTING_1": "Extruder",
+    "TOOLHEAD_3DPRINTING_2": "Dual Extruder",
+    "TOOLHEAD_CNC_1": "CNC",
+    "TOOLHEAD_LASER_1": "Laser",
+    "TOOLHEAD_LASER_2": "Laser",
+}
+
 # Attributes
 ATTR_MODEL = "model"
 ATTR_STATUS = "status"

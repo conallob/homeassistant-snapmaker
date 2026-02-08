@@ -236,14 +236,16 @@ class TestConfigFlow:
             context={"source": config_entries.SOURCE_USER},
         )
 
-        # Start pick_device step
+        # Start pick_device step via the flow instance
         flow = hass.config_entries.flow._progress[result["flow_id"]]
         result = await flow.async_step_pick_device()
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "pick_device"
 
-        # Configure with selected device
+        # Configure with the discovered device IP directly.
+        # The schema uses vol.In() with the discovered device IPs as keys,
+        # so we pass the known discovered IP from mock_discovery.
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {"device": "192.168.1.100"},
