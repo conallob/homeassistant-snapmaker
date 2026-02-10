@@ -57,7 +57,17 @@ async def async_setup_entry(
     # Add CNC/Laser sensors only when the matching toolhead is detected.
     # Uses the stable toolhead_type property which persists across offline states,
     # unlike device.data["tool_head"] which resets to "N/A" when offline.
+    # Note: async_config_entry_first_refresh() in __init__.py ensures the device
+    # has been polled before we reach here. If the device was offline during that
+    # first poll, toolhead_type will be None and these sensors won't be created
+    # until the integration is reloaded after the device comes online.
     tool_head = device.toolhead_type
+    if tool_head is None:
+        _LOGGER.debug(
+            "Toolhead type unknown for %s; CNC/Laser sensors will not be "
+            "created. Reload the integration after the device comes online",
+            device.host,
+        )
     if tool_head == TOOLHEAD_TYPE_CNC:
         entities.append(SnapmakerSpindleSpeedSensor(coordinator, device))
     if tool_head == TOOLHEAD_TYPE_LASER:
