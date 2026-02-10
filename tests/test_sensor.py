@@ -8,7 +8,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.snapmaker.const import DOMAIN
+from custom_components.snapmaker.const import (
+    DOMAIN,
+    TOOLHEAD_MAP,
+    TOOLHEAD_TYPE_CNC,
+    TOOLHEAD_TYPE_DUAL_EXTRUDER,
+    TOOLHEAD_TYPE_EXTRUDER,
+    TOOLHEAD_TYPE_LASER,
+)
 from custom_components.snapmaker.sensor import (
     SnapmakerBedTargetTempSensor,
     SnapmakerBedTempSensor,
@@ -87,8 +94,9 @@ class TestSensorPlatform:
 
         await async_setup_entry(hass, config_entry, mock_add_entities)
 
-        # 19 common sensors + 2 single nozzle sensors = 21
-        assert len(entities) == 21
+        # 16 common sensors + 2 single nozzle sensors = 18
+        # (CNC/Laser sensors are only added for matching toolhead types)
+        assert len(entities) == 18
         assert any(isinstance(e, SnapmakerStatusSensor) for e in entities)
         assert any(isinstance(e, SnapmakerNozzleTempSensor) for e in entities)
         assert any(isinstance(e, SnapmakerBedTempSensor) for e in entities)
@@ -98,9 +106,10 @@ class TestSensorPlatform:
         assert any(isinstance(e, SnapmakerPositionXSensor) for e in entities)
         assert any(isinstance(e, SnapmakerTotalLinesSensor) for e in entities)
         assert any(isinstance(e, SnapmakerDiagnosticSensor) for e in entities)
-        assert any(isinstance(e, SnapmakerSpindleSpeedSensor) for e in entities)
-        assert any(isinstance(e, SnapmakerLaserPowerSensor) for e in entities)
-        assert any(isinstance(e, SnapmakerLaserFocalLengthSensor) for e in entities)
+        # Verify no CNC/Laser sensors for Extruder toolhead
+        assert not any(isinstance(e, SnapmakerSpindleSpeedSensor) for e in entities)
+        assert not any(isinstance(e, SnapmakerLaserPowerSensor) for e in entities)
+        assert not any(isinstance(e, SnapmakerLaserFocalLengthSensor) for e in entities)
 
     async def test_async_setup_entry_dual_extruder(
         self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
@@ -129,10 +138,129 @@ class TestSensorPlatform:
 
         await async_setup_entry(hass, config_entry, mock_add_entities)
 
-        # 19 common sensors + 4 dual nozzle sensors = 23
-        assert len(entities) == 23
+        # 16 common sensors + 4 dual nozzle sensors = 20
+        assert len(entities) == 20
         assert any(isinstance(e, SnapmakerNozzle1TempSensor) for e in entities)
         assert any(isinstance(e, SnapmakerNozzle2TempSensor) for e in entities)
+
+    async def test_async_setup_entry_cnc_toolhead(
+        self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
+    ):
+        """Test sensor platform setup for CNC toolhead."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100"},
+            unique_id="192.168.1.100",
+        )
+        config_entry.add_to_hass(hass)
+
+        mock_snapmaker_device.return_value.dual_extruder = False
+        mock_snapmaker_device.return_value.toolhead_type = "CNC"
+        hass.data[DOMAIN] = {
+            config_entry.entry_id: {
+                "coordinator": mock_coordinator,
+                "device": mock_snapmaker_device.return_value,
+            }
+        }
+
+        entities = []
+        await async_setup_entry(hass, config_entry, entities.extend)
+
+        # 16 common + 1 spindle + 2 nozzle = 19
+        assert len(entities) == 19
+        assert any(isinstance(e, SnapmakerSpindleSpeedSensor) for e in entities)
+        assert not any(isinstance(e, SnapmakerLaserPowerSensor) for e in entities)
+        assert not any(isinstance(e, SnapmakerLaserFocalLengthSensor) for e in entities)
+
+    async def test_async_setup_entry_laser_toolhead(
+        self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
+    ):
+        """Test sensor platform setup for Laser toolhead."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100"},
+            unique_id="192.168.1.100",
+        )
+        config_entry.add_to_hass(hass)
+
+        mock_snapmaker_device.return_value.dual_extruder = False
+        mock_snapmaker_device.return_value.toolhead_type = "Laser"
+        hass.data[DOMAIN] = {
+            config_entry.entry_id: {
+                "coordinator": mock_coordinator,
+                "device": mock_snapmaker_device.return_value,
+            }
+        }
+
+        entities = []
+        await async_setup_entry(hass, config_entry, entities.extend)
+
+        # 16 common + 2 laser + 2 nozzle = 20
+        assert len(entities) == 20
+        assert not any(isinstance(e, SnapmakerSpindleSpeedSensor) for e in entities)
+        assert any(isinstance(e, SnapmakerLaserPowerSensor) for e in entities)
+        assert any(isinstance(e, SnapmakerLaserFocalLengthSensor) for e in entities)
+
+    async def test_async_setup_entry_unknown_toolhead(
+        self, hass: HomeAssistant, mock_coordinator, mock_snapmaker_device
+    ):
+        """Test sensor platform setup with unknown/None toolhead type."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100"},
+            unique_id="192.168.1.100",
+        )
+        config_entry.add_to_hass(hass)
+
+        mock_snapmaker_device.return_value.dual_extruder = False
+        mock_snapmaker_device.return_value.toolhead_type = None
+        hass.data[DOMAIN] = {
+            config_entry.entry_id: {
+                "coordinator": mock_coordinator,
+                "device": mock_snapmaker_device.return_value,
+            }
+        }
+
+        entities = []
+        await async_setup_entry(hass, config_entry, entities.extend)
+
+        # 16 common + 0 toolhead-specific + 2 nozzle = 18
+        assert len(entities) == 18
+        assert not any(isinstance(e, SnapmakerSpindleSpeedSensor) for e in entities)
+        assert not any(isinstance(e, SnapmakerLaserPowerSensor) for e in entities)
+        assert not any(isinstance(e, SnapmakerLaserFocalLengthSensor) for e in entities)
+
+    async def test_toolhead_sensors_diagnostic_category(
+        self, mock_coordinator, mock_snapmaker_device
+    ):
+        """Test that CNC/Laser sensors have diagnostic entity category."""
+        from homeassistant.const import EntityCategory
+
+        device = mock_snapmaker_device.return_value
+
+        spindle = SnapmakerSpindleSpeedSensor(mock_coordinator, device)
+        assert spindle._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+        laser_power = SnapmakerLaserPowerSensor(mock_coordinator, device)
+        assert laser_power._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+        laser_focal = SnapmakerLaserFocalLengthSensor(mock_coordinator, device)
+        assert laser_focal._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+
+class TestToolheadConstants:
+    """Test that toolhead type constants are consistent with TOOLHEAD_MAP."""
+
+    def test_toolhead_type_constants_in_map(self):
+        """Ensure toolhead type constants match values in TOOLHEAD_MAP."""
+        map_values = set(TOOLHEAD_MAP.values())
+        assert TOOLHEAD_TYPE_EXTRUDER in map_values
+        assert TOOLHEAD_TYPE_DUAL_EXTRUDER in map_values
+        assert TOOLHEAD_TYPE_CNC in map_values
+        assert TOOLHEAD_TYPE_LASER in map_values
 
 
 class TestSensorEntities:

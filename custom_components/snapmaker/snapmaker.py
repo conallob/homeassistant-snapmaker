@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional
 
 import requests
 
-from .const import TOOLHEAD_MAP
+from .const import TOOLHEAD_MAP, TOOLHEAD_TYPE_DUAL_EXTRUDER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -463,7 +463,7 @@ class SnapmakerDevice:
                 and has_nozzle1
             ):
                 self._dual_extruder = True
-                tool_head = "Dual Extruder"
+                tool_head = TOOLHEAD_TYPE_DUAL_EXTRUDER
                 _LOGGER.debug(
                     "Dual extruder fallback triggered for %s: "
                     "toolHead=%s, nozzleTemperature absent, "

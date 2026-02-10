@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, TOOLHEAD_TYPE_CNC, TOOLHEAD_TYPE_LASER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,9 +58,9 @@ async def async_setup_entry(
     # Uses the stable toolhead_type property which persists across offline states,
     # unlike device.data["tool_head"] which resets to "N/A" when offline.
     tool_head = device.toolhead_type
-    if tool_head == "CNC":
+    if tool_head == TOOLHEAD_TYPE_CNC:
         entities.append(SnapmakerSpindleSpeedSensor(coordinator, device))
-    if tool_head == "Laser":
+    if tool_head == TOOLHEAD_TYPE_LASER:
         entities.extend(
             [
                 SnapmakerLaserPowerSensor(coordinator, device),

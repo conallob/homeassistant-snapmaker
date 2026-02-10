@@ -8,13 +8,19 @@ DEFAULT_NAME = "Snapmaker"
 # Configuration keys
 CONF_TOKEN = "token"
 
-# Toolhead types
+# Toolhead type display names
+TOOLHEAD_TYPE_EXTRUDER = "Extruder"
+TOOLHEAD_TYPE_DUAL_EXTRUDER = "Dual Extruder"
+TOOLHEAD_TYPE_CNC = "CNC"
+TOOLHEAD_TYPE_LASER = "Laser"
+
+# Map raw API toolhead identifiers to display names
 TOOLHEAD_MAP = {
-    "TOOLHEAD_3DPRINTING_1": "Extruder",
-    "TOOLHEAD_3DPRINTING_2": "Dual Extruder",
-    "TOOLHEAD_CNC_1": "CNC",
-    "TOOLHEAD_LASER_1": "Laser",
-    "TOOLHEAD_LASER_2": "Laser",
+    "TOOLHEAD_3DPRINTING_1": TOOLHEAD_TYPE_EXTRUDER,
+    "TOOLHEAD_3DPRINTING_2": TOOLHEAD_TYPE_DUAL_EXTRUDER,
+    "TOOLHEAD_CNC_1": TOOLHEAD_TYPE_CNC,
+    "TOOLHEAD_LASER_1": TOOLHEAD_TYPE_LASER,
+    "TOOLHEAD_LASER_2": TOOLHEAD_TYPE_LASER,
 }
 
 # Attributes
