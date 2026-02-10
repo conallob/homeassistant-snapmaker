@@ -1,5 +1,7 @@
 """Tests for the Snapmaker integration initialization."""
 
+from unittest.mock import patch
+
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 import pytest
@@ -24,6 +26,21 @@ def config_entry(config_entry_data):
     )
 
 
+@pytest.fixture
+def mock_forward_setups():
+    """Mock platform forward setup and unload to avoid state checks."""
+    with (
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        ) as mock_setup,
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_unload_platforms",
+            return_value=True,
+        ) as mock_unload,
+    ):
+        yield mock_setup, mock_unload
+
+
 class TestInit:
     """Test the initialization."""
 
@@ -33,7 +50,11 @@ class TestInit:
         assert DOMAIN in hass.data
 
     async def test_async_setup_entry(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test setup from a config entry."""
         # Initialize the integration first
@@ -48,7 +69,11 @@ class TestInit:
         assert "device" in hass.data[DOMAIN][config_entry.entry_id]
 
     async def test_async_setup_entry_creates_coordinator(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test that setup creates a coordinator."""
         await async_setup(hass, {})
@@ -61,7 +86,11 @@ class TestInit:
         assert coordinator.name == "Snapmaker 192.168.1.100"
 
     async def test_async_unload_entry(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test unloading a config entry."""
         await async_setup(hass, {})
@@ -75,7 +104,11 @@ class TestInit:
         assert config_entry.entry_id not in hass.data[DOMAIN]
 
     async def test_coordinator_update(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test coordinator update method."""
         await async_setup(hass, {})
@@ -90,7 +123,11 @@ class TestInit:
         mock_snapmaker_device.return_value.update.assert_called()
 
     async def test_coordinator_update_failure(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test coordinator update with failure."""
         await async_setup(hass, {})
@@ -107,7 +144,11 @@ class TestInit:
         assert coordinator.last_update_success is False
 
     async def test_coordinator_interval(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test coordinator update interval is set correctly."""
         await async_setup(hass, {})
@@ -119,7 +160,11 @@ class TestInit:
         assert coordinator.update_interval.total_seconds() == 30
 
     async def test_device_stored_in_hass_data(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test that device instance is stored in hass.data."""
         await async_setup(hass, {})
@@ -136,7 +181,7 @@ class TestTokenPersistence:
     """Test token persistence in config entry."""
 
     async def test_setup_passes_saved_token(
-        self, hass: HomeAssistant, mock_snapmaker_device
+        self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
     ):
         """Test that a saved token is passed to the device on setup."""
         config_entry = MockConfigEntry(
@@ -154,7 +199,11 @@ class TestTokenPersistence:
         mock_snapmaker_device.assert_any_call("192.168.1.100", token="saved-token-abc")
 
     async def test_setup_without_token(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test that setup works without a saved token."""
         await async_setup(hass, {})
@@ -166,7 +215,11 @@ class TestTokenPersistence:
         mock_snapmaker_device.assert_any_call("192.168.1.100", token=None)
 
     async def test_token_callback_is_set(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test that the token update callback is set on the device."""
         await async_setup(hass, {})
@@ -178,7 +231,11 @@ class TestTokenPersistence:
         mock_snapmaker_device.return_value.set_token_update_callback.assert_called()
 
     async def test_token_callback_uses_call_soon_threadsafe(
-        self, hass: HomeAssistant, config_entry, mock_snapmaker_device
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
     ):
         """Test that the token callback uses call_soon_threadsafe for thread safety."""
         await async_setup(hass, {})
