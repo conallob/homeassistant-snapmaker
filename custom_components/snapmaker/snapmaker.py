@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional
 
 import requests
 
-from .const import TOOLHEAD_MAP
+from .const import TOOLHEAD_MAP, TOOLHEAD_TYPE_DUAL_EXTRUDER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class SnapmakerDevice:
         self._model = None
         self._status = "OFFLINE"
         self._dual_extruder = False
+        self._toolhead_type: Optional[str] = None
         self._on_token_update: Optional[Callable[[str], None]] = None
 
     @property
@@ -91,6 +92,11 @@ class SnapmakerDevice:
     def dual_extruder(self) -> bool:
         """Return True if device has dual extruder."""
         return self._dual_extruder
+
+    @property
+    def toolhead_type(self) -> Optional[str]:
+        """Return the toolhead type (persists across offline states)."""
+        return self._toolhead_type
 
     @property
     def token(self) -> Optional[str]:
@@ -457,10 +463,23 @@ class SnapmakerDevice:
                 and has_nozzle1
             ):
                 self._dual_extruder = True
-                tool_head = "Dual Extruder"
+                tool_head = TOOLHEAD_TYPE_DUAL_EXTRUDER
+                _LOGGER.debug(
+                    "Dual extruder fallback triggered for %s: "
+                    "toolHead=%s, nozzleTemperature absent, "
+                    "nozzle1Temperature present=%s, nozzle2Temperature present=%s",
+                    self._host,
+                    raw_toolhead,
+                    has_nozzle1,
+                    has_nozzle2,
+                )
 
             if self._dual_extruder:
                 _LOGGER.debug("Detected dual extruder configuration for %s", self._host)
+
+            # Persist toolhead type so it survives offline periods
+            if tool_head and tool_head != "N/A":
+                self._toolhead_type = tool_head
 
             # Extract temperature data based on configuration
             if self._dual_extruder:

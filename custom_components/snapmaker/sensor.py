@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, TOOLHEAD_TYPE_CNC, TOOLHEAD_TYPE_LASER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,10 +52,31 @@ async def async_setup_entry(
         SnapmakerTotalLinesSensor(coordinator, device),
         SnapmakerCurrentLineSensor(coordinator, device),
         SnapmakerDiagnosticSensor(coordinator, device),
-        SnapmakerSpindleSpeedSensor(coordinator, device),
-        SnapmakerLaserPowerSensor(coordinator, device),
-        SnapmakerLaserFocalLengthSensor(coordinator, device),
     ]
+
+    # Add CNC/Laser sensors only when the matching toolhead is detected.
+    # Uses the stable toolhead_type property which persists across offline states,
+    # unlike device.data["tool_head"] which resets to "N/A" when offline.
+    # Note: async_config_entry_first_refresh() in __init__.py ensures the device
+    # has been polled before we reach here. If the device was offline during that
+    # first poll, toolhead_type will be None and these sensors won't be created
+    # until the integration is reloaded after the device comes online.
+    tool_head = device.toolhead_type
+    if tool_head is None:
+        _LOGGER.debug(
+            "Toolhead type unknown for %s; CNC/Laser sensors will not be "
+            "created. Reload the integration after the device comes online",
+            device.host,
+        )
+    if tool_head == TOOLHEAD_TYPE_CNC:
+        entities.append(SnapmakerSpindleSpeedSensor(coordinator, device))
+    if tool_head == TOOLHEAD_TYPE_LASER:
+        entities.extend(
+            [
+                SnapmakerLaserPowerSensor(coordinator, device),
+                SnapmakerLaserFocalLengthSensor(coordinator, device),
+            ]
+        )
 
     # Add nozzle sensors based on extruder configuration
     if device.dual_extruder:
@@ -500,6 +521,7 @@ class SnapmakerSpindleSpeedSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Spindle Speed"
         self._attr_unique_id = f"{self._device.host}_spindle_speed"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "RPM"
         self._attr_icon = "mdi:rotate-right"
@@ -518,6 +540,7 @@ class SnapmakerLaserPowerSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Laser Power"
         self._attr_unique_id = f"{self._device.host}_laser_power"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_icon = "mdi:laser-pointer"
@@ -536,6 +559,7 @@ class SnapmakerLaserFocalLengthSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Laser Focal Length"
         self._attr_unique_id = f"{self._device.host}_laser_focal_length"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
         self._attr_icon = "mdi:laser-pointer"
