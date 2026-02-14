@@ -236,16 +236,19 @@ class TestConfigFlow:
             context={"source": config_entries.SOURCE_USER},
         )
 
-        # Start pick_device step
+        # Navigate to pick_device step and verify its form is shown.
+        # Call async_step_pick_device directly on the flow instance to
+        # trigger device discovery (no direct path from the user step).
         flow = hass.config_entries.flow._progress[result["flow_id"]]
         result = await flow.async_step_pick_device()
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "pick_device"
 
-        # Configure with selected device
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
+        # Complete pick_device by calling the step handler directly with
+        # the user input, since the schema was not registered through
+        # async_configure.
+        result = await flow.async_step_pick_device(
             {"device": "192.168.1.100"},
         )
 
