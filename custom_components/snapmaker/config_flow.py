@@ -235,7 +235,9 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if entry:
             self.context["host"] = entry.data.get(CONF_HOST)
-            self.context["model"] = entry.data.get(CONF_HOST)  # Will be updated during authorize
+            self.context["model"] = entry.data.get(
+                CONF_HOST
+            )  # Will be updated during authorize
             self.context["entry_id"] = entry.entry_id
 
         return await self.async_step_reauth_confirm()

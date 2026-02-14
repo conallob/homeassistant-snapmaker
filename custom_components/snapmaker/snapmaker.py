@@ -327,7 +327,9 @@ class SnapmakerDevice:
             # Always close the socket, even if an exception occurred
             udp_socket.close()
 
-    def generate_token(self, max_attempts: int = 30, poll_interval: int = 10) -> Optional[str]:
+    def generate_token(
+        self, max_attempts: int = 30, poll_interval: int = 10
+    ) -> Optional[str]:
         """Generate a new authentication token from Snapmaker device.
 
         This method implements a polling mechanism similar to the reference implementations.
@@ -363,7 +365,9 @@ class SnapmakerDevice:
                 _LOGGER.error("No token received from Snapmaker")
                 return None
 
-            _LOGGER.info("Token received, waiting for user authorization on touchscreen...")
+            _LOGGER.info(
+                "Token received, waiting for user authorization on touchscreen..."
+            )
 
             # Poll until user authorizes on touchscreen
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
