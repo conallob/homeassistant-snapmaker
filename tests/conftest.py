@@ -17,6 +17,7 @@ def mock_snapmaker_device():
     device.dual_extruder = False
     device.toolhead_type = "Extruder"
     device.token = None
+    device.token_invalid = False
     device.raw_api_response = {
         "status": "IDLE",
         "nozzleTemperature": 25.0,

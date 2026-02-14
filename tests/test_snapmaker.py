@@ -389,13 +389,15 @@ class TestSnapmakerDevice:
             assert device.status == "OFFLINE"
 
     def test_get_status_401_clears_token_and_sets_offline(self):
-        """Test that a 401 response clears the token and sets device offline."""
+        """Test that a 401 response sets token_invalid flag and sets device offline."""
         with patch("custom_components.snapmaker.snapmaker.requests") as mock_req:
             # Use the real HTTPError class so except clause can catch it
             mock_req.exceptions.HTTPError = requests.exceptions.HTTPError
             error = requests.exceptions.HTTPError("Unauthorized")
             error.response = MagicMock()
             error.response.status_code = 401
+            # Set status_code on the mock response object itself (not just on error.response)
+            mock_req.get.return_value.status_code = 401
             mock_req.get.return_value.raise_for_status.side_effect = error
 
             device = SnapmakerDevice("192.168.1.100")
@@ -403,8 +405,9 @@ class TestSnapmakerDevice:
             device._available = True
             device._get_status()
 
-            # Token should be cleared and device should be set offline
-            assert device._token is None
+            # Token should remain but token_invalid flag should be set, device should be offline
+            assert device._token == "test-token-123"
+            assert device._token_invalid is True
             assert device._available is False
             assert device.status == "OFFLINE"
 
