@@ -251,3 +251,120 @@ class TestTokenPersistence:
 
         # The callback should exist and be callable
         assert callable(callback)
+
+    async def test_token_callback_updates_config_entry(
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
+    ):
+        """Test that token callback actually updates the config entry."""
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        await async_setup_entry(hass, config_entry)
+
+        # Get the callback that was registered
+        call_args = (
+            mock_snapmaker_device.return_value.set_token_update_callback.call_args
+        )
+        callback = call_args[0][0]
+
+        # Trigger the callback with a new token
+        new_token = "new-token-xyz"
+        callback(new_token)
+
+        # Wait for the event loop to process the call_soon_threadsafe
+        await hass.async_block_till_done()
+
+        # Verify the config entry was updated with the new token
+        assert config_entry.data[CONF_TOKEN] == new_token
+
+    async def test_token_callback_logs_update(
+        self,
+        hass: HomeAssistant,
+        config_entry,
+        mock_snapmaker_device,
+        mock_forward_setups,
+    ):
+        """Test that token callback logs the update."""
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        await async_setup_entry(hass, config_entry)
+
+        # Get the callback that was registered
+        call_args = (
+            mock_snapmaker_device.return_value.set_token_update_callback.call_args
+        )
+        callback = call_args[0][0]
+
+        # Trigger the callback with a new token
+        with patch("custom_components.snapmaker._LOGGER") as mock_logger:
+            callback("new-token-xyz")
+            await hass.async_block_till_done()
+
+            # Verify debug log was called
+            mock_logger.debug.assert_called_once()
+
+
+class TestReauthFlow:
+    """Test reauthentication flow when token expires."""
+
+    async def test_coordinator_update_triggers_reauth_on_token_invalid(
+        self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
+    ):
+        """Test that token_invalid=True triggers reauth flow."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100", CONF_TOKEN: "old-token"},
+            unique_id="192.168.1.100",
+        )
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        await async_setup_entry(hass, config_entry)
+
+        # Set token_invalid to True
+        mock_snapmaker_device.return_value.token_invalid = True
+
+        coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+        # Mock entry.async_start_reauth
+        with patch.object(config_entry, "async_start_reauth") as mock_reauth:
+            await coordinator.async_refresh()
+
+            # Verify reauth was triggered
+            mock_reauth.assert_called_once_with(hass)
+            # Verify update failed
+            assert coordinator.last_update_success is False
+
+    async def test_token_invalid_raises_update_failed(
+        self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
+    ):
+        """Test that token_invalid raises UpdateFailed with appropriate message."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100", CONF_TOKEN: "old-token"},
+            unique_id="192.168.1.100",
+        )
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        await async_setup_entry(hass, config_entry)
+
+        # Set token_invalid to True
+        mock_snapmaker_device.return_value.token_invalid = True
+
+        coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+        # Refresh should fail with appropriate error
+        await coordinator.async_refresh()
+
+        # Coordinator catches the exception and sets last_update_success
+        assert coordinator.last_update_success is False
+        # The last_exception should contain our error message
+        assert "Token authentication failed" in str(coordinator.last_exception)

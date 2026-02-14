@@ -95,7 +95,7 @@ class TestConfigFlow:
     async def test_user_flow_auth_failed(
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
-        """Test user configuration with authorization failure."""
+        """Test user configuration with authorization failure and retry."""
         # Mock generate_token to return None (failure)
         mock_snapmaker_device.return_value.generate_token.return_value = None
 
@@ -118,9 +118,22 @@ class TestConfigFlow:
             {},
         )
 
+        # Should show error but stay on authorize form (allows retry)
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "authorize"
         assert result["errors"] == {"base": "auth_failed"}
+
+        # User can retry - this time it succeeds
+        mock_snapmaker_device.return_value.generate_token.return_value = "test-token-123"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {},
+        )
+
+        # Should now create entry successfully
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"] == {CONF_HOST: "192.168.1.100", CONF_TOKEN: "test-token-123"}
 
     async def test_user_flow_already_configured(
         self, hass, mock_snapmaker_device, mock_setup_entry

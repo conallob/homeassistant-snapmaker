@@ -106,7 +106,19 @@ class SnapmakerDevice:
 
     @property
     def token_invalid(self) -> bool:
-        """Return True if token is invalid and needs reauth."""
+        """Return True if token is invalid and needs reauth.
+
+        This flag is set to True when the device API returns a 401 Unauthorized
+        response, indicating the current token has expired or been invalidated.
+        When True, the integration's DataUpdateCoordinator will trigger a reauth
+        flow, prompting the user to generate a new token via the touchscreen.
+
+        The flag remains True until a new token is successfully generated and
+        validated through the config flow's authorize step.
+
+        Returns:
+            bool: True if token needs reauthorization, False otherwise.
+        """
         return self._token_invalid
 
     def set_token_update_callback(self, callback: Callable[[str], None]) -> None:
