@@ -73,7 +73,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 # Token still invalid but reauth already triggered
                 raise UpdateFailed("Token authentication failed, reauth in progress")
 
-            # Reset reauth flag on successful update (token is valid again)
+            # Reset reauth flag when update succeeds AND token is valid
+            # This allows future token invalidations to trigger reauth again
             reauth_triggered = False
             return result
         except UpdateFailed:

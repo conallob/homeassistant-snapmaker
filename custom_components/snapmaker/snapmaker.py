@@ -368,7 +368,7 @@ class SnapmakerDevice:
             Optional[str]: Authentication token if successful, None otherwise
         """
         try:
-            url = f"http://{self._host}:8080/api/v1/connect"
+            url = f"http://{self._host}:{API_PORT}/api/v1/connect"
 
             # First request to initiate connection
             _LOGGER.info("Requesting token from Snapmaker at %s", self._host)
@@ -420,6 +420,9 @@ class SnapmakerDevice:
                     response = requests.post(
                         url, data=form_data, headers=headers, timeout=API_TIMEOUT
                     )
+
+                    # Check HTTP status before parsing response
+                    response.raise_for_status()
 
                     # Check if token was validated by Snapmaker
                     # Per Snapmaker API spec, a successful validation echoes back the same token
