@@ -396,6 +396,8 @@ class TestSnapmakerDevice:
             error = requests.exceptions.HTTPError("Unauthorized")
             error.response = MagicMock()
             error.response.status_code = 401
+            # Set status_code on the mock response object itself (not just on error.response)
+            mock_req.get.return_value.status_code = 401
             mock_req.get.return_value.raise_for_status.side_effect = error
 
             device = SnapmakerDevice("192.168.1.100")
