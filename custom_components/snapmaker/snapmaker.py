@@ -354,6 +354,12 @@ class SnapmakerDevice:
         The user must approve the connection on the Snapmaker touchscreen before the
         token can be validated.
 
+        IMPORTANT: This method blocks the executor thread for up to
+        (max_attempts * poll_interval) seconds. Default settings can block
+        for up to 5 minutes (30 × 10s), which may impact the thread pool's
+        ability to handle other tasks. Consider the thread pool size when
+        calling this method.
+
         Args:
             max_attempts: Maximum number of polling attempts (default 30 = 5 minutes)
             poll_interval: Seconds to wait between polling attempts (default 10)
@@ -411,6 +417,10 @@ class SnapmakerDevice:
                         if response_data.get("token") == token:
                             _LOGGER.info("Token validated successfully")
                             self._token = token
+                            self._token_invalid = False
+                            # Notify callback about new token for persistence
+                            if self._on_token_update:
+                                self._on_token_update(token)
                             return token
                     except (json.JSONDecodeError, ValueError) as json_err:
                         _LOGGER.debug(
@@ -490,6 +500,7 @@ class SnapmakerDevice:
                 response_data = json.loads(response.text)
                 if response_data.get("token") == token:
                     _LOGGER.info("Successfully connected to Snapmaker")
+                    self._token_invalid = False
                     # Notify callback about new token for persistence
                     if self._on_token_update:
                         self._on_token_update(token)
@@ -720,13 +731,9 @@ class SnapmakerDevice:
 
             self._data.update(update_dict)
         except requests.exceptions.HTTPError as http_err:
-            if http_err.response is not None and http_err.response.status_code == 401:
-                _LOGGER.error("Token authentication failed (401 Unauthorized)")
-                self._token_invalid = True
-                self._set_offline()
-            else:
-                _LOGGER.error("HTTP error getting status from Snapmaker: %s", http_err)
-                self._set_offline()
+            # Note: 401 errors are already handled explicitly before raise_for_status()
+            _LOGGER.error("HTTP error getting status from Snapmaker: %s", http_err)
+            self._set_offline()
         except Exception as err:
             _LOGGER.error("Error getting status from Snapmaker: %s", err)
             self._set_offline()
