@@ -26,7 +26,6 @@ async def async_setup(hass: HomeAssistant, config: dict):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Snapmaker from a config entry."""
     host = entry.data[CONF_HOST]
-    token = entry.data.get(CONF_TOKEN)
 
     # Restore persisted token if available
     saved_token = entry.data.get(CONF_TOKEN)

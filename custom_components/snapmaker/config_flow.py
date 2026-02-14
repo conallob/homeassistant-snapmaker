@@ -235,9 +235,10 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if entry:
             self.context["host"] = entry.data.get(CONF_HOST)
-            self.context["model"] = entry.data.get(
-                CONF_HOST
-            )  # Will be updated during authorize
+            # Use entry title for model display (format: "Snapmaker <model>")
+            # Will be refreshed from device during authorize step
+            title_parts = entry.title.split(" ", 1)
+            self.context["model"] = title_parts[1] if len(title_parts) > 1 else "Unknown"
             self.context["entry_id"] = entry.entry_id
 
         return await self.async_step_reauth_confirm()

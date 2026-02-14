@@ -50,6 +50,7 @@ class SnapmakerDevice:
         self._dual_extruder = False
         self._toolhead_type: Optional[str] = None
         self._on_token_update: Optional[Callable[[str], None]] = None
+        self._token_invalid = False
 
     @property
     def host(self) -> str:
@@ -102,6 +103,11 @@ class SnapmakerDevice:
     def token(self) -> Optional[str]:
         """Return the current authentication token."""
         return self._token
+
+    @property
+    def token_invalid(self) -> bool:
+        """Return True if token is invalid and needs reauth."""
+        return self._token_invalid
 
     def set_token_update_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback to be called when token is updated."""
@@ -375,16 +381,19 @@ class SnapmakerDevice:
 
             for attempt in range(max_attempts):
                 try:
-                    # Wait before attempting validation
+                    # Wait before attempting validation (skip on first attempt to try immediately)
                     if attempt > 0:
+                        # Blocking sleep in executor thread - this is acceptable as it runs
+                        # in a separate thread pool, not blocking the event loop
                         time.sleep(poll_interval)
 
-                    # Try to validate token
+                    # Try to validate token by posting it back to the device
                     response = requests.post(
                         url, data=form_data, headers=headers, timeout=API_TIMEOUT
                     )
 
-                    # Check if token was validated
+                    # Check if token was validated by Snapmaker
+                    # Per Snapmaker API spec, a successful validation echoes back the same token
                     try:
                         response_data = json.loads(response.text)
                         if response_data.get("token") == token:
@@ -700,10 +709,8 @@ class SnapmakerDevice:
             self._data.update(update_dict)
         except requests.exceptions.HTTPError as http_err:
             if http_err.response is not None and http_err.response.status_code == 401:
-                _LOGGER.warning(
-                    "Token expired or invalid for %s, clearing token", self._host
-                )
-                self._token = None
+                _LOGGER.error("Token authentication failed (401 Unauthorized)")
+                self._token_invalid = True
                 self._set_offline()
             else:
                 _LOGGER.error("HTTP error getting status from Snapmaker: %s", http_err)
