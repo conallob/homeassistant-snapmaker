@@ -2,6 +2,9 @@
 
 DOMAIN = "snapmaker"
 
+# Configuration constants
+CONF_TOKEN = "token"
+
 # Default values
 DEFAULT_NAME = "Snapmaker"
 

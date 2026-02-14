@@ -8,7 +8,7 @@ from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import CONF_TOKEN, DOMAIN
 from .snapmaker import SnapmakerDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,13 +26,22 @@ async def async_setup(hass: HomeAssistant, config: dict):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Snapmaker from a config entry."""
     host = entry.data[CONF_HOST]
+    token = entry.data.get(CONF_TOKEN)
 
-    snapmaker = SnapmakerDevice(host)
+    snapmaker = SnapmakerDevice(host, token=token)
 
     async def async_update_data():
         """Fetch data from the Snapmaker device."""
         try:
-            return await hass.async_add_executor_job(snapmaker.update)
+            result = await hass.async_add_executor_job(snapmaker.update)
+
+            # Check if token is invalid and trigger reauth
+            if snapmaker.token_invalid:
+                _LOGGER.error("Token is invalid, triggering reauth flow")
+                entry.async_start_reauth(hass)
+                raise UpdateFailed("Token authentication failed, please reauthorize")
+
+            return result
         except Exception as err:
             raise UpdateFailed(f"Error communicating with Snapmaker: {err}")
 

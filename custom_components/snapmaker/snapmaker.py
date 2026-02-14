@@ -24,15 +24,21 @@ API_TIMEOUT = 5  # Seconds to wait for HTTP API responses
 class SnapmakerDevice:
     """Class to communicate with a Snapmaker device."""
 
-    def __init__(self, host: str):
-        """Initialize the Snapmaker device."""
+    def __init__(self, host: str, token: Optional[str] = None):
+        """Initialize the Snapmaker device.
+
+        Args:
+            host: IP address of the Snapmaker device
+            token: Optional authentication token for reuse
+        """
         self._host = host
-        self._token = None
+        self._token = token
         self._data = {}
         self._available = False
         self._model = None
         self._status = "OFFLINE"
         self._dual_extruder = False
+        self._token_invalid = False
 
     @property
     def host(self) -> str:
@@ -63,6 +69,16 @@ class SnapmakerDevice:
     def dual_extruder(self) -> bool:
         """Return True if device has dual extruder."""
         return self._dual_extruder
+
+    @property
+    def token(self) -> Optional[str]:
+        """Return the authentication token."""
+        return self._token
+
+    @property
+    def token_invalid(self) -> bool:
+        """Return True if token is invalid and needs reauth."""
+        return self._token_invalid
 
     def update(self) -> Dict[str, Any]:
         """Update device data."""
@@ -213,12 +229,107 @@ class SnapmakerDevice:
             # Always close the socket, even if an exception occurred
             udp_socket.close()
 
+    def generate_token(self, max_attempts: int = 30, poll_interval: int = 10) -> Optional[str]:
+        """Generate a new authentication token from Snapmaker device.
+
+        This method implements a polling mechanism similar to the reference implementations.
+        The user must approve the connection on the Snapmaker touchscreen before the
+        token can be validated.
+
+        Args:
+            max_attempts: Maximum number of polling attempts (default 30 = 5 minutes)
+            poll_interval: Seconds to wait between polling attempts (default 10)
+
+        Returns:
+            Optional[str]: Authentication token if successful, None otherwise
+        """
+        try:
+            url = f"http://{self._host}:8080/api/v1/connect"
+
+            # First request to initiate connection
+            _LOGGER.info("Requesting token from Snapmaker at %s", self._host)
+            response = requests.post(url, timeout=API_TIMEOUT)
+
+            if "Failed" in response.text:
+                _LOGGER.error("Failed to connect to Snapmaker: %s", response.text)
+                return None
+
+            # Extract token from response
+            try:
+                token = json.loads(response.text).get("token")
+            except (json.JSONDecodeError, ValueError) as json_err:
+                _LOGGER.error("Failed to parse token response: %s", json_err)
+                return None
+
+            if not token:
+                _LOGGER.error("No token received from Snapmaker")
+                return None
+
+            _LOGGER.info("Token received, waiting for user authorization on touchscreen...")
+
+            # Poll until user authorizes on touchscreen
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+            form_data = {"token": token}
+
+            for attempt in range(max_attempts):
+                try:
+                    # Wait before attempting validation
+                    if attempt > 0:
+                        time.sleep(poll_interval)
+
+                    # Try to validate token
+                    response = requests.post(
+                        url, data=form_data, headers=headers, timeout=API_TIMEOUT
+                    )
+
+                    # Check if token was validated
+                    try:
+                        response_data = json.loads(response.text)
+                        if response_data.get("token") == token:
+                            _LOGGER.info("Token validated successfully")
+                            self._token = token
+                            return token
+                    except (json.JSONDecodeError, ValueError) as json_err:
+                        _LOGGER.debug(
+                            "Token validation attempt %d/%d: %s",
+                            attempt + 1,
+                            max_attempts,
+                            json_err,
+                        )
+                        continue
+
+                except requests.exceptions.RequestException as req_err:
+                    _LOGGER.debug(
+                        "Network error on attempt %d/%d: %s",
+                        attempt + 1,
+                        max_attempts,
+                        req_err,
+                    )
+                    continue
+
+            _LOGGER.error(
+                "Token validation failed after %d attempts. "
+                "User may not have authorized on touchscreen.",
+                max_attempts,
+            )
+            return None
+
+        except requests.exceptions.RequestException as req_err:
+            _LOGGER.error("Network error requesting token from Snapmaker: %s", req_err)
+            return None
+        except Exception as err:
+            _LOGGER.error("Unexpected error generating token: %s", err)
+            return None
+
     def _get_token(self) -> Optional[str]:
         """Get authentication token from Snapmaker device.
 
         Implements a two-step token acquisition process:
         1. POST to /api/v1/connect to request a token
         2. POST the received token back to validate it
+
+        Note: This is a simplified version for backward compatibility.
+        Use generate_token() for the polling mechanism during initial setup.
 
         Returns:
             Optional[str]: Authentication token if successful, None otherwise
@@ -275,6 +386,14 @@ class SnapmakerDevice:
         try:
             url = f"http://{self._host}:8080/api/v1/status?token={self._token}"
             response = requests.get(url, timeout=API_TIMEOUT)
+
+            # Check for authentication errors
+            if response.status_code == 401:
+                _LOGGER.error("Token authentication failed (401 Unauthorized)")
+                self._token_invalid = True
+                self._available = False
+                self._status = "OFFLINE"
+                return
 
             # Check if response is valid
             if not response.text or response.text.strip() == "":

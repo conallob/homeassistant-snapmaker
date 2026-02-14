@@ -11,14 +11,26 @@
       "confirm": {
         "title": "Confirm Snapmaker",
         "description": "Do you want to set up the Snapmaker at {host}?"
+      },
+      "authorize": {
+        "title": "Authorize Connection",
+        "description": "Please authorize this connection on your Snapmaker touchscreen.\n\nThe Snapmaker at {host} ({model}) will display an authorization request. Please approve it on the touchscreen.\n\nThis process may take up to 5 minutes. Click Submit to continue."
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Snapmaker",
+        "description": "The authentication token for {host} has expired. Please click Submit to generate a new token."
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to the Snapmaker. Please check the IP address and make sure the printer is powered on.",
+      "auth_failed": "Failed to authorize with Snapmaker. Please ensure you approved the connection on the touchscreen and try again.",
       "unknown": "Unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This Snapmaker device is already configured."
+      "already_configured": "This Snapmaker device is already configured.",
+      "no_devices_found": "No Snapmaker devices found on the network.",
+      "not_snapmaker_device": "The discovered device is not a Snapmaker.",
+      "reauth_successful": "Re-authentication successful. The integration has been updated with a new token."
     }
   }
 }

@@ -4,9 +4,10 @@ import logging
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
+from homeassistant.data_entry_flow import FlowResult
 import voluptuous as vol
 
-from .const import DOMAIN
+from .const import CONF_TOKEN, DOMAIN
 from .snapmaker import SnapmakerDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,10 +34,10 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
-                    return self.async_create_entry(
-                        title=f"Snapmaker {snapmaker.model or host}",
-                        data=user_input,
-                    )
+                    # Device is online, proceed to token authorization
+                    self.context["host"] = host
+                    self.context["model"] = snapmaker.model or host
+                    return await self.async_step_authorize()
                 else:
                     errors["base"] = "cannot_connect"
             except Exception:
@@ -54,6 +55,63 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_authorize(self, user_input=None) -> FlowResult:
+        """Handle token authorization step."""
+        errors = {}
+        host = self.context.get("host")
+        model = self.context.get("model", host)
+
+        if user_input is not None:
+            # User has confirmed, now generate token
+            snapmaker = SnapmakerDevice(host)
+            try:
+                # Generate token with polling (max 30 attempts = 5 minutes)
+                token = await self.hass.async_add_executor_job(
+                    snapmaker.generate_token, 30, 10
+                )
+
+                if token:
+                    # Check if this is a reauth flow
+                    if self.source == config_entries.SOURCE_REAUTH:
+                        # Update existing entry with new token
+                        entry = self.hass.config_entries.async_get_entry(
+                            self.context["entry_id"]
+                        )
+                        if entry:
+                            self.hass.config_entries.async_update_entry(
+                                entry,
+                                data={
+                                    **entry.data,
+                                    CONF_TOKEN: token,
+                                },
+                            )
+                            await self.hass.config_entries.async_reload(entry.entry_id)
+                            return self.async_abort(reason="reauth_successful")
+                    else:
+                        # Token successfully generated for initial setup
+                        return self.async_create_entry(
+                            title=f"Snapmaker {model}",
+                            data={
+                                CONF_HOST: host,
+                                CONF_TOKEN: token,
+                            },
+                        )
+                else:
+                    errors["base"] = "auth_failed"
+            except Exception as err:
+                _LOGGER.exception("Unexpected exception during authorization")
+                errors["base"] = "unknown"
+
+        # Show authorization form with instructions
+        return self.async_show_form(
+            step_id="authorize",
+            description_placeholders={
+                "host": host,
+                "model": model,
+            },
+            errors=errors,
+        )
+
     async def async_step_dhcp(self, discovery_info):
         """Handle DHCP discovery."""
         host = discovery_info.ip
@@ -67,10 +125,10 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             result = await self.hass.async_add_executor_job(snapmaker.update)
             if snapmaker.available:
-                return self.async_create_entry(
-                    title=f"Snapmaker {snapmaker.model or host}",
-                    data={CONF_HOST: host},
-                )
+                # Device is online, proceed to token authorization
+                self.context["host"] = host
+                self.context["model"] = snapmaker.model or host
+                return await self.async_step_authorize()
         except Exception:
             pass
 
@@ -89,10 +147,9 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
-                    return self.async_create_entry(
-                        title=f"Snapmaker {snapmaker.model or host}",
-                        data={CONF_HOST: host},
-                    )
+                    # Device is online, proceed to token authorization
+                    self.context["model"] = snapmaker.model or host
+                    return await self.async_step_authorize()
                 else:
                     errors["base"] = "cannot_connect"
             except Exception:
@@ -132,10 +189,11 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(host)
             self._abort_if_unique_id_configured()
 
-            return self.async_create_entry(
-                title=f"Snapmaker {self.context.get('devices', {}).get(host, {}).get('model', host)}",
-                data={CONF_HOST: host},
-            )
+            # Get device info from context and proceed to authorize
+            device_info = self.context.get("devices", {}).get(host, {})
+            self.context["host"] = host
+            self.context["model"] = device_info.get("model", host)
+            return await self.async_step_authorize()
 
         # Discover devices
         devices = await self.hass.async_add_executor_job(SnapmakerDevice.discover)
@@ -170,3 +228,39 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         return await getattr(self, f"async_step_{user_input}")()
+
+    async def async_step_reauth(self, entry_data=None) -> FlowResult:
+        """Handle reauthentication when token expires."""
+        # Get the entry being reauthenticated
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        if entry:
+            self.context["host"] = entry.data.get(CONF_HOST)
+            self.context["model"] = entry.data.get(CONF_HOST)  # Will be updated during authorize
+            self.context["entry_id"] = entry.entry_id
+
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None) -> FlowResult:
+        """Confirm reauthentication."""
+        errors = {}
+        host = self.context.get("host")
+
+        if user_input is not None:
+            # Validate device is still online
+            snapmaker = SnapmakerDevice(host)
+            try:
+                result = await self.hass.async_add_executor_job(snapmaker.update)
+                if snapmaker.available:
+                    self.context["model"] = snapmaker.model or host
+                    return await self.async_step_authorize()
+                else:
+                    errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception during reauth")
+                errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            description_placeholders={"host": host},
+            errors=errors,
+        )
