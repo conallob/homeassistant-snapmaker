@@ -373,6 +373,8 @@ class TestReauthFlow:
         self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
     ):
         """Test that config entry without token triggers reauth on first update."""
+        from homeassistant.exceptions import ConfigEntryNotReady
+
         # Create entry without token (backward compatibility scenario)
         config_entry = MockConfigEntry(
             domain=DOMAIN,
@@ -388,14 +390,12 @@ class TestReauthFlow:
 
         # Mock entry.async_start_reauth to verify it gets called
         with patch.object(config_entry, "async_start_reauth") as mock_reauth:
-            await async_setup_entry(hass, config_entry)
+            # Setup should fail with ConfigEntryNotReady when first update fails
+            with pytest.raises(ConfigEntryNotReady):
+                await async_setup_entry(hass, config_entry)
 
-            coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
-
-            # Verify reauth was triggered
+            # Verify reauth was triggered before the exception
             mock_reauth.assert_called_once_with(hass)
-            # Verify update failed
-            assert coordinator.last_update_success is False
 
     async def test_token_invalidation_after_successful_updates(
         self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
