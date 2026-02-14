@@ -346,7 +346,7 @@ class SnapmakerDevice:
             udp_socket.close()
 
     def generate_token(
-        self, max_attempts: int = 30, poll_interval: int = 10
+        self, max_attempts: int = 18, poll_interval: int = 10
     ) -> Optional[str]:
         """Generate a new authentication token from Snapmaker device.
 
@@ -356,12 +356,12 @@ class SnapmakerDevice:
 
         IMPORTANT: This method blocks the executor thread for up to
         (max_attempts * poll_interval) seconds. Default settings can block
-        for up to 5 minutes (30 × 10s), which may impact the thread pool's
+        for up to 3 minutes (18 × 10s), which may impact the thread pool's
         ability to handle other tasks. Consider the thread pool size when
         calling this method.
 
         Args:
-            max_attempts: Maximum number of polling attempts (default 30 = 5 minutes)
+            max_attempts: Maximum number of polling attempts (default 18 = 3 minutes)
             poll_interval: Seconds to wait between polling attempts (default 10)
 
         Returns:
@@ -408,6 +408,8 @@ class SnapmakerDevice:
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             form_data = {"token": token}
 
+            # Poll for user authorization on touchscreen
+            # First attempt is immediate (no sleep), subsequent attempts wait poll_interval
             for attempt in range(max_attempts):
                 try:
                     # Wait before attempting validation (skip on first attempt to try immediately)
@@ -454,7 +456,7 @@ class SnapmakerDevice:
                     )
                     continue
 
-            _LOGGER.error(
+            _LOGGER.warning(
                 "Token validation failed after %d attempts. "
                 "User may not have authorized on touchscreen.",
                 max_attempts,
@@ -490,6 +492,9 @@ class SnapmakerDevice:
         Returns:
             Optional[str]: Authentication token if successful, None otherwise
         """
+        # Reset token invalid flag at start to ensure clean state
+        self._token_invalid = False
+
         try:
             url = f"http://{self._host}:{API_PORT}/api/v1/connect"
 

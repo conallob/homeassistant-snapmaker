@@ -1,5 +1,6 @@
 """The Snapmaker 3D Printer integration."""
 
+import asyncio
 from datetime import timedelta
 import logging
 
@@ -42,6 +43,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
         def _do_update():
             """Update config entry on the event loop (thread-safe)."""
+            # Check if entry is still loaded before updating
+            if entry.entry_id not in hass.data.get(DOMAIN, {}):
+                _LOGGER.debug(
+                    "Entry %s already unloaded, skipping token update", entry.entry_id
+                )
+                return
+
             if new_token != entry.data.get(CONF_TOKEN):
                 new_data = {**entry.data, CONF_TOKEN: new_token}
                 hass.config_entries.async_update_entry(entry, data=new_data)
@@ -51,7 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     snapmaker.set_token_update_callback(_on_token_update)
 
-    # Track if reauth has been triggered to prevent repeated calls
+    # Lock to prevent race conditions in reauth flag management
+    reauth_lock = asyncio.Lock()
     reauth_triggered = False
 
     async def async_update_data():
@@ -62,20 +71,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             result = await hass.async_add_executor_job(snapmaker.update)
 
             # Check if token is invalid and trigger reauth (only once)
-            # Note: token_invalid is set in executor thread, but Python boolean
-            # reads are atomic. We guard against multiple reauth triggers.
-            if snapmaker.token_invalid and not reauth_triggered:
-                _LOGGER.error("Token is invalid, triggering reauth flow")
-                reauth_triggered = True
-                entry.async_start_reauth(hass)
-                raise UpdateFailed("Token authentication failed, please reauthorize")
-            elif snapmaker.token_invalid:
-                # Token still invalid but reauth already triggered
-                raise UpdateFailed("Token authentication failed, reauth in progress")
+            # Use lock to ensure atomic check-then-set of reauth flag
+            async with reauth_lock:
+                if snapmaker.token_invalid and not reauth_triggered:
+                    _LOGGER.error("Token is invalid, triggering reauth flow")
+                    reauth_triggered = True
+                    entry.async_start_reauth(hass)
+                    raise UpdateFailed(
+                        "Token authentication failed, please reauthorize"
+                    )
+                elif snapmaker.token_invalid:
+                    # Token still invalid but reauth already triggered
+                    raise UpdateFailed(
+                        "Token authentication failed, reauth in progress"
+                    )
 
-            # Reset reauth flag when update succeeds AND token is valid
-            # This allows future token invalidations to trigger reauth again
-            reauth_triggered = False
+                # Reset reauth flag when update succeeds AND token is valid
+                # This allows future token invalidations to trigger reauth again
+                reauth_triggered = False
+
             return result
         except UpdateFailed:
             # Re-raise UpdateFailed as-is (including token auth failures)

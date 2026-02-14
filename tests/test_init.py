@@ -368,3 +368,72 @@ class TestReauthFlow:
         assert coordinator.last_update_success is False
         # The last_exception should contain our error message
         assert "Token authentication failed" in str(coordinator.last_exception)
+
+    async def test_entry_without_token_triggers_reauth(
+        self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
+    ):
+        """Test that config entry without token triggers reauth on first update."""
+        # Create entry without token (backward compatibility scenario)
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100"},  # No token
+            unique_id="192.168.1.100",
+        )
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        # Mock device to return token_invalid=True when no token is present
+        mock_snapmaker_device.return_value.token_invalid = True
+
+        # Mock entry.async_start_reauth to verify it gets called
+        with patch.object(config_entry, "async_start_reauth") as mock_reauth:
+            await async_setup_entry(hass, config_entry)
+
+            coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+            # Verify reauth was triggered
+            mock_reauth.assert_called_once_with(hass)
+            # Verify update failed
+            assert coordinator.last_update_success is False
+
+    async def test_token_invalidation_after_successful_updates(
+        self, hass: HomeAssistant, mock_snapmaker_device, mock_forward_setups
+    ):
+        """Test that token becomes invalid mid-operation after several successful updates."""
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Snapmaker",
+            data={CONF_HOST: "192.168.1.100", CONF_TOKEN: "valid-token"},
+            unique_id="192.168.1.100",
+        )
+        await async_setup(hass, {})
+        config_entry.add_to_hass(hass)
+
+        # Initially token is valid
+        mock_snapmaker_device.return_value.token_invalid = False
+
+        await async_setup_entry(hass, config_entry)
+
+        coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+        # First update succeeds
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success is True
+
+        # Second update succeeds
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success is True
+
+        # Now token becomes invalid (simulating device reboot or token expiration)
+        mock_snapmaker_device.return_value.token_invalid = True
+
+        # Third update should trigger reauth
+        with patch.object(config_entry, "async_start_reauth") as mock_reauth:
+            await coordinator.async_refresh()
+
+            # Verify reauth was triggered
+            mock_reauth.assert_called_once_with(hass)
+            # Verify update failed
+            assert coordinator.last_update_success is False
+            assert "Token authentication failed" in str(coordinator.last_exception)

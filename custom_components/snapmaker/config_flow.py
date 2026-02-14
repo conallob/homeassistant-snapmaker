@@ -18,6 +18,20 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    async def _validate_and_authorize(self, host: str, model: str) -> FlowResult:
+        """Validate device is online and proceed to authorization.
+
+        Args:
+            host: IP address of the device
+            model: Model name of the device
+
+        Returns:
+            FlowResult for authorize step
+        """
+        self.context["host"] = host
+        self.context["model"] = model
+        return await self.async_step_authorize()
+
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
         errors = {}
@@ -35,9 +49,9 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
                     # Device is online, proceed to token authorization
-                    self.context["host"] = host
-                    self.context["model"] = snapmaker.model or host
-                    return await self.async_step_authorize()
+                    return await self._validate_and_authorize(
+                        host, snapmaker.model or host
+                    )
                 else:
                     errors["base"] = "cannot_connect"
             except Exception:
@@ -65,10 +79,8 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # User has confirmed, now generate token
             snapmaker = SnapmakerDevice(host)
             try:
-                # Generate token with polling (max 30 attempts = 5 minutes)
-                token = await self.hass.async_add_executor_job(
-                    snapmaker.generate_token, 30, 10
-                )
+                # Generate token with polling (default: 18 attempts × 10s = 3 minutes)
+                token = await self.hass.async_add_executor_job(snapmaker.generate_token)
 
                 if token:
                     # Validate the token works before persisting it
@@ -76,11 +88,18 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     try:
                         await self.hass.async_add_executor_job(test_device.update)
                         if test_device.token_invalid:
-                            _LOGGER.error("Generated token is invalid on first use")
+                            _LOGGER.error(
+                                "Generated token is invalid on first use for %s. "
+                                "Device may have rejected the token or requires re-approval.",
+                                host,
+                            )
                             errors["base"] = "auth_failed"
                         elif not test_device.available:
                             _LOGGER.warning(
-                                "Device not available after token generation"
+                                "Device not available after token generation for %s. "
+                                "Device status: %s",
+                                host,
+                                test_device.status,
                             )
                             errors["base"] = "cannot_connect"
                         else:
@@ -99,9 +118,17 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                             CONF_TOKEN: token,
                                         },
                                     )
-                                    await self.hass.config_entries.async_reload(
-                                        entry.entry_id
-                                    )
+                                    # Attempt to reload with new token
+                                    try:
+                                        await self.hass.config_entries.async_reload(
+                                            entry.entry_id
+                                        )
+                                    except Exception as reload_err:
+                                        _LOGGER.error(
+                                            "Failed to reload entry after reauth: %s",
+                                            reload_err,
+                                        )
+                                        # Still return success since token was saved
                                     return self.async_abort(reason="reauth_successful")
                             else:
                                 # Token successfully generated for initial setup
@@ -145,9 +172,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             result = await self.hass.async_add_executor_job(snapmaker.update)
             if snapmaker.available:
                 # Device is online, proceed to token authorization
-                self.context["host"] = host
-                self.context["model"] = snapmaker.model or host
-                return await self.async_step_authorize()
+                return await self._validate_and_authorize(host, snapmaker.model or host)
         except Exception:
             pass
 
@@ -167,8 +192,9 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 result = await self.hass.async_add_executor_job(snapmaker.update)
                 if snapmaker.available:
                     # Device is online, proceed to token authorization
-                    self.context["model"] = snapmaker.model or host
-                    return await self.async_step_authorize()
+                    return await self._validate_and_authorize(
+                        host, snapmaker.model or host
+                    )
                 else:
                     errors["base"] = "cannot_connect"
             except Exception:
