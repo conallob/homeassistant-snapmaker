@@ -80,10 +80,25 @@ API requirements. This ensures only authorized connections can access device dat
 **Token Expiration & Reauth**:
 
 - When API returns 401 Unauthorized, the `token_invalid` flag is set
-- DataUpdateCoordinator detects this and triggers a reauth flow
+- DataUpdateCoordinator detects this and triggers a reauth flow (only once)
 - User is prompted to generate a new token via the touchscreen
-- Config entry is updated with the new token once authorized
+- New token is validated before persisting to config entry
 - Integration automatically reloads with the new token
+
+**Thread Pool Considerations**:
+
+The `generate_token()` method blocks an executor thread during token generation:
+- Default: 30 attempts × 10 second intervals = up to 5 minutes blocking time
+- This is necessary because users must manually approve on the touchscreen
+- Home Assistant's default executor pool has limited threads (typically 5-15)
+- During token generation, one thread is unavailable for other operations
+- This only occurs during initial setup or reauth, not during normal operation
+- Consider the impact if multiple devices need reauth simultaneously
+
+Recommendations for production use:
+- Ensure users understand they must approve on the touchscreen promptly
+- Monitor thread pool utilization if managing many Snapmaker devices
+- Token generation only happens during setup/reauth, not routine updates
 
 ### Breaking Changes & Migration
 

@@ -374,15 +374,26 @@ class SnapmakerDevice:
             _LOGGER.info("Requesting token from Snapmaker at %s", self._host)
             response = requests.post(url, timeout=API_TIMEOUT)
 
-            if "Failed" in response.text:
-                _LOGGER.error("Failed to connect to Snapmaker: %s", response.text)
+            # Check HTTP status before parsing response
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as http_err:
+                _LOGGER.error(
+                    "HTTP error requesting token: %s. Response: %s",
+                    http_err,
+                    response.text[:200],
+                )
                 return None
 
             # Extract token from response
             try:
                 token = json.loads(response.text).get("token")
             except (json.JSONDecodeError, ValueError) as json_err:
-                _LOGGER.error("Failed to parse token response: %s", json_err)
+                _LOGGER.error(
+                    "Failed to parse token response: %s. Response: %s",
+                    json_err,
+                    response.text[:200],
+                )
                 return None
 
             if not token:
@@ -455,14 +466,23 @@ class SnapmakerDevice:
             return None
 
     def _get_token(self) -> Optional[str]:
-        """Get authentication token from Snapmaker device.
+        """Get authentication token from Snapmaker device without polling.
+
+        This is a simplified, non-polling version used during routine updates
+        when the device has already been approved on the touchscreen. It attempts
+        immediate token validation without the multi-attempt polling loop.
+
+        For initial setup or reauth flows, use generate_token() instead, which
+        implements the polling mechanism required for user authorization.
 
         Implements a two-step token acquisition process:
         1. POST to /api/v1/connect to request a token
-        2. POST the received token back to validate it
+        2. POST the received token back to validate it (no retry loop)
 
-        Note: This is a simplified version for backward compatibility.
-        Use generate_token() for the polling mechanism during initial setup.
+        Use Cases:
+        - Called from update() when no token exists but device is online
+        - Assumes previous authorization or immediate approval
+        - Will fail if user hasn't pre-approved on touchscreen
 
         Returns:
             Optional[str]: Authentication token if successful, None otherwise
@@ -473,15 +493,26 @@ class SnapmakerDevice:
             # First request to initiate connection
             response = requests.post(url, timeout=API_TIMEOUT)
 
-            if "Failed" in response.text:
-                _LOGGER.error("Failed to connect to Snapmaker: %s", response.text)
+            # Check HTTP status before parsing response
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as http_err:
+                _LOGGER.error(
+                    "HTTP error requesting token: %s. Response: %s",
+                    http_err,
+                    response.text[:200],
+                )
                 return None
 
             # Extract token from response
             try:
                 token = json.loads(response.text).get("token")
             except (json.JSONDecodeError, ValueError) as json_err:
-                _LOGGER.error("Failed to parse token response: %s", json_err)
+                _LOGGER.error(
+                    "Failed to parse token response: %s. Response: %s",
+                    json_err,
+                    response.text[:200],
+                )
                 return None
 
             if not token:

@@ -51,20 +51,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     snapmaker.set_token_update_callback(_on_token_update)
 
+    # Track if reauth has been triggered to prevent repeated calls
+    reauth_triggered = False
+
     async def async_update_data():
         """Fetch data from the Snapmaker device."""
+        nonlocal reauth_triggered
+
         try:
             result = await hass.async_add_executor_job(snapmaker.update)
 
-            # Check if token is invalid and trigger reauth
+            # Check if token is invalid and trigger reauth (only once)
             # Note: token_invalid is set in executor thread, but Python boolean
-            # reads are atomic and we only trigger reauth once due to coordinator's
-            # built-in debouncing of updates during error states
-            if snapmaker.token_invalid:
+            # reads are atomic. We guard against multiple reauth triggers.
+            if snapmaker.token_invalid and not reauth_triggered:
                 _LOGGER.error("Token is invalid, triggering reauth flow")
+                reauth_triggered = True
                 entry.async_start_reauth(hass)
                 raise UpdateFailed("Token authentication failed, please reauthorize")
+            elif snapmaker.token_invalid:
+                # Token still invalid but reauth already triggered
+                raise UpdateFailed("Token authentication failed, reauth in progress")
 
+            # Reset reauth flag on successful update (token is valid again)
+            reauth_triggered = False
             return result
         except UpdateFailed:
             # Re-raise UpdateFailed as-is (including token auth failures)

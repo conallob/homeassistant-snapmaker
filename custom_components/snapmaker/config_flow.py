@@ -71,31 +71,50 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
                 if token:
-                    # Check if this is a reauth flow
-                    if self.source == config_entries.SOURCE_REAUTH:
-                        # Update existing entry with new token
-                        entry = self.hass.config_entries.async_get_entry(
-                            self.context["entry_id"]
-                        )
-                        if entry:
-                            self.hass.config_entries.async_update_entry(
-                                entry,
-                                data={
-                                    **entry.data,
-                                    CONF_TOKEN: token,
-                                },
+                    # Validate the token works before persisting it
+                    test_device = SnapmakerDevice(host, token=token)
+                    try:
+                        await self.hass.async_add_executor_job(test_device.update)
+                        if test_device.token_invalid:
+                            _LOGGER.error("Generated token is invalid on first use")
+                            errors["base"] = "auth_failed"
+                        elif not test_device.available:
+                            _LOGGER.warning(
+                                "Device not available after token generation"
                             )
-                            await self.hass.config_entries.async_reload(entry.entry_id)
-                            return self.async_abort(reason="reauth_successful")
-                    else:
-                        # Token successfully generated for initial setup
-                        return self.async_create_entry(
-                            title=f"Snapmaker {model}",
-                            data={
-                                CONF_HOST: host,
-                                CONF_TOKEN: token,
-                            },
-                        )
+                            errors["base"] = "cannot_connect"
+                        else:
+                            # Token is valid and device is accessible
+                            # Check if this is a reauth flow
+                            if self.source == config_entries.SOURCE_REAUTH:
+                                # Update existing entry with new token
+                                entry = self.hass.config_entries.async_get_entry(
+                                    self.context["entry_id"]
+                                )
+                                if entry:
+                                    self.hass.config_entries.async_update_entry(
+                                        entry,
+                                        data={
+                                            **entry.data,
+                                            CONF_TOKEN: token,
+                                        },
+                                    )
+                                    await self.hass.config_entries.async_reload(
+                                        entry.entry_id
+                                    )
+                                    return self.async_abort(reason="reauth_successful")
+                            else:
+                                # Token successfully generated for initial setup
+                                return self.async_create_entry(
+                                    title=f"Snapmaker {model}",
+                                    data={
+                                        CONF_HOST: host,
+                                        CONF_TOKEN: token,
+                                    },
+                                )
+                    except Exception as validation_err:
+                        _LOGGER.exception("Error validating new token")
+                        errors["base"] = "unknown"
                 else:
                     errors["base"] = "auth_failed"
             except Exception as err:
@@ -238,7 +257,9 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Use entry title for model display (format: "Snapmaker <model>")
             # Will be refreshed from device during authorize step
             title_parts = entry.title.split(" ", 1)
-            self.context["model"] = title_parts[1] if len(title_parts) > 1 else "Unknown"
+            self.context["model"] = (
+                title_parts[1] if len(title_parts) > 1 else "Unknown"
+            )
             self.context["entry_id"] = entry.entry_id
 
         return await self.async_step_reauth_confirm()
