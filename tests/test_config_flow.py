@@ -28,7 +28,9 @@ class TestConfigFlow:
     ):
         """Test successful user configuration."""
         # Mock generate_token to return a token
-        mock_snapmaker_device.return_value.generate_token.return_value = "test-token-123"
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -54,7 +56,10 @@ class TestConfigFlow:
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Snapmaker Snapmaker A350"
-        assert result["data"] == {CONF_HOST: "192.168.1.100", CONF_TOKEN: "test-token-123"}
+        assert result["data"] == {
+            CONF_HOST: "192.168.1.100",
+            CONF_TOKEN: "test-token-123",
+        }
 
     async def test_user_flow_cannot_connect(
         self, hass, mock_snapmaker_device, mock_setup_entry
@@ -124,7 +129,9 @@ class TestConfigFlow:
         assert result["errors"] == {"base": "auth_failed"}
 
         # User can retry - this time it succeeds
-        mock_snapmaker_device.return_value.generate_token.return_value = "test-token-123"
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -133,7 +140,10 @@ class TestConfigFlow:
 
         # Should now create entry successfully
         assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"] == {CONF_HOST: "192.168.1.100", CONF_TOKEN: "test-token-123"}
+        assert result["data"] == {
+            CONF_HOST: "192.168.1.100",
+            CONF_TOKEN: "test-token-123",
+        }
 
     async def test_user_flow_already_configured(
         self, hass, mock_snapmaker_device, mock_setup_entry
@@ -165,7 +175,9 @@ class TestConfigFlow:
     ):
         """Test DHCP discovery flow."""
         # Mock generate_token to return a token
-        mock_snapmaker_device.return_value.generate_token.return_value = "test-token-123"
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
 
         discovery_info = MagicMock()
         discovery_info.ip = "192.168.1.100"
@@ -188,7 +200,10 @@ class TestConfigFlow:
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Snapmaker Snapmaker A350"
-        assert result["data"] == {CONF_HOST: "192.168.1.100", CONF_TOKEN: "test-token-123"}
+        assert result["data"] == {
+            CONF_HOST: "192.168.1.100",
+            CONF_TOKEN: "test-token-123",
+        }
 
     async def test_dhcp_flow_needs_confirmation(
         self, hass, mock_snapmaker_device, mock_setup_entry
@@ -213,7 +228,9 @@ class TestConfigFlow:
     ):
         """Test confirmation flow success."""
         # Mock generate_token to return a token
-        mock_snapmaker_device.return_value.generate_token.return_value = "test-token-123"
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
 
         # Start with discovery which leads to confirm step
         discovery_info = {
@@ -313,7 +330,9 @@ class TestConfigFlow:
     ):
         """Test pick device flow."""
         # Mock generate_token to return a token
-        mock_snapmaker_device.return_value.generate_token.return_value = "test-token-123"
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
@@ -341,7 +360,10 @@ class TestConfigFlow:
         result = await flow.async_step_authorize({})
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"] == {CONF_HOST: "192.168.1.100", CONF_TOKEN: "test-token-123"}
+        assert result["data"] == {
+            CONF_HOST: "192.168.1.100",
+            CONF_TOKEN: "test-token-123",
+        }
 
     async def test_pick_device_flow_no_devices(
         self, hass, mock_discovery, mock_setup_entry
