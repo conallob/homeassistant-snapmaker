@@ -167,12 +167,42 @@ class SnapmakerDevice:
         )
         return False
 
+    def _connect_with_token(self, token: str) -> bool:
+        """Reconnect to the device using an existing known token.
+
+        The Snapmaker requires a POST to /api/v1/connect with the saved token
+        to re-establish the session before status can be polled. Without this,
+        the device returns 401 on every status request even with a valid token.
+        This mirrors how Luban reconnects on startup.
+        """
+        try:
+            url = f"http://{self._host}:{API_PORT}/api/v1/connect"
+            response = requests.post(
+                url,
+                data=f"token={token}",
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=API_TIMEOUT,
+            )
+            response.raise_for_status()
+            try:
+                data = json.loads(response.text)
+                if data.get("token") == token:
+                    _LOGGER.debug("Reconnected to Snapmaker using existing token")
+                    return True
+            except (json.JSONDecodeError, ValueError) as err:
+                _LOGGER.error("Failed to parse token reconnect response: %s", err)
+            _LOGGER.warning("Token reconnect rejected by device %s", self._host)
+            return False
+        except requests.exceptions.RequestException as err:
+            _LOGGER.error("Error reconnecting with token to %s: %s", self._host, err)
+            return False
+
     def update(self) -> Dict[str, Any]:
         """Update device data."""
         # First check if device is online via discovery
         self._check_online()
 
-        # If device is online and we have a token, get detailed status
+        # If device is online, get detailed status
         if self._available and self._status != "OFFLINE":
             # TCP reachability pre-check before making HTTP calls
             if not self._check_reachable():
@@ -184,7 +214,19 @@ class SnapmakerDevice:
                 self._set_offline()
                 return self._data
 
-            if not self._token:
+            if self._token:
+                # Reconnect with existing token before fetching status.
+                # The Snapmaker session expires on device reboot; without
+                # this POST the status endpoint returns 401 even for valid tokens.
+                if not self._connect_with_token(self._token):
+                    _LOGGER.warning(
+                        "Failed to reconnect with saved token for %s, "
+                        "token may have been invalidated",
+                        self._host,
+                    )
+                    self._token_invalid = True
+                    return self._data
+            else:
                 self._token = self._get_token()
 
             if self._token:

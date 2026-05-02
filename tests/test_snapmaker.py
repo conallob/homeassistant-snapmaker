@@ -887,4 +887,79 @@ class TestDualExtruderDetection:
         device._get_status()
 
         assert device.dual_extruder is False
+
+
+class TestTokenReconnect:
+    """Test the token reconnect flow for existing saved tokens."""
+
+    def test_connect_with_token_success(self, mock_requests):
+        """Test successful reconnect with an existing token."""
+        device = SnapmakerDevice("192.168.1.100")
+        result = device._connect_with_token("test-token-123")
+
+        assert result is True
+        mock_requests.post.assert_called_once()
+
+    def test_connect_with_token_wrong_response(self, mock_requests):
+        """Test reconnect fails when device returns a different token."""
+        mock_requests.post.return_value.text = '{"token": "different-token"}'
+
+        device = SnapmakerDevice("192.168.1.100")
+        result = device._connect_with_token("test-token-123")
+
+        assert result is False
+
+    def test_connect_with_token_invalid_json(self, mock_requests):
+        """Test reconnect fails gracefully on invalid JSON response."""
+        mock_requests.post.return_value.text = "not-json"
+
+        device = SnapmakerDevice("192.168.1.100")
+        result = device._connect_with_token("test-token-123")
+
+        assert result is False
+
+    def test_connect_with_token_request_exception(self, mock_requests):
+        """Test reconnect fails gracefully on network error."""
+        mock_requests.post.side_effect = mock_requests.exceptions.RequestException(
+            "Connection refused"
+        )
+
+        device = SnapmakerDevice("192.168.1.100")
+        result = device._connect_with_token("test-token-123")
+
+        assert result is False
+
+    def test_update_reconnects_with_existing_token(self, mock_socket, mock_requests):
+        """Test that update() POSTs to reconnect when a saved token is present."""
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device.update()
+
+        # Only one POST for reconnect (no token generation needed)
+        assert mock_requests.post.call_count == 1
+        # Status GET should follow successful reconnect
+        assert mock_requests.get.call_count == 1
+        assert device.available is True
+        assert device.token_invalid is False
+
+    def test_update_sets_token_invalid_on_reconnect_failure(
+        self, mock_socket, mock_requests
+    ):
+        """Test that update() sets token_invalid when reconnect is rejected."""
+        mock_requests.post.return_value.text = '{"token": "different-token"}'
+
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device.update()
+
+        assert device.token_invalid is True
+        # Status GET must NOT be called after a failed reconnect
+        assert mock_requests.get.call_count == 0
+
+    def test_update_without_token_skips_reconnect(self, mock_socket, mock_requests):
+        """Test that update() uses generate flow when no token is present."""
+        device = SnapmakerDevice("192.168.1.100")
+        device.update()
+
+        # Two POSTs for _get_token() (request + validate), zero for reconnect
+        assert mock_requests.post.call_count == 2
+        assert mock_requests.get.call_count == 1
         assert device.data["tool_head"] == "CNC"
