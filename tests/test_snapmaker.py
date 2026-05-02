@@ -962,4 +962,4 @@ class TestTokenReconnect:
         # Two POSTs for _get_token() (request + validate), zero for reconnect
         assert mock_requests.post.call_count == 2
         assert mock_requests.get.call_count == 1
-        assert device.data["tool_head"] == "CNC"
+        assert device.data["tool_head"] == "Extruder"
