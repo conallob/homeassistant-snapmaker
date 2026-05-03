@@ -51,6 +51,7 @@ class SnapmakerDevice:
         self._toolhead_type: Optional[str] = None
         self._on_token_update: Optional[Callable[[str], None]] = None
         self._token_invalid = False
+        self._connected = False  # True once _connect_with_token() succeeds; reset on offline/401
 
     @property
     def host(self) -> str:
@@ -215,17 +216,20 @@ class SnapmakerDevice:
                 return self._data
 
             if self._token:
-                # Reconnect with existing token before fetching status.
-                # The Snapmaker session expires on device reboot; without
-                # this POST the status endpoint returns 401 even for valid tokens.
-                if not self._connect_with_token(self._token):
-                    _LOGGER.warning(
-                        "Failed to reconnect with saved token for %s, "
-                        "token may have been invalidated",
-                        self._host,
-                    )
-                    self._token_invalid = True
-                    return self._data
+                if not self._connected:
+                    # Reconnect with existing token. Required after HA startup
+                    # (loading a saved token) or when the device reboots and the
+                    # session is lost. _connected is reset to False by _set_offline()
+                    # and on 401, so this POST only fires when actually needed.
+                    if not self._connect_with_token(self._token):
+                        _LOGGER.warning(
+                            "Failed to reconnect with saved token for %s, "
+                            "token may have been invalidated",
+                            self._host,
+                        )
+                        self._token_invalid = True
+                        return self._data
+                    self._connected = True
             else:
                 self._token = self._get_token()
 
@@ -242,6 +246,7 @@ class SnapmakerDevice:
         """
         self._available = False
         self._status = "OFFLINE"
+        self._connected = False  # Force reconnect POST when device comes back up
         self._raw_api_response = {}
         self._data = {
             "ip": self._host,
@@ -611,6 +616,7 @@ class SnapmakerDevice:
             if response.status_code == 401:
                 _LOGGER.error("Token authentication failed (401 Unauthorized)")
                 self._token_invalid = True
+                self._connected = False  # Force reconnect attempt on next poll
                 self._available = False
                 self._status = "OFFLINE"
                 return

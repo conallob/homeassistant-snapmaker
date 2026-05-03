@@ -930,7 +930,7 @@ class TestTokenReconnect:
         assert result is False
 
     def test_update_reconnects_with_existing_token(self, mock_socket, mock_requests):
-        """Test that update() POSTs to reconnect when a saved token is present."""
+        """Test that update() POSTs to reconnect on first poll with a saved token."""
         device = SnapmakerDevice("192.168.1.100", token="test-token-123")
         device.update()
 
@@ -940,6 +940,40 @@ class TestTokenReconnect:
         assert mock_requests.get.call_count == 1
         assert device.available is True
         assert device.token_invalid is False
+
+    def test_second_poll_skips_reconnect_post(self, mock_socket, mock_requests):
+        """Test that subsequent polls skip the reconnect POST once connected."""
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+
+        device.update()  # First poll — reconnect POST + status GET
+        mock_requests.reset_mock()
+
+        device.update()  # Second poll — status GET only, no reconnect POST
+        assert mock_requests.post.call_count == 0
+        assert mock_requests.get.call_count == 1
+
+    def test_reconnect_triggered_after_device_goes_offline(
+        self, mock_socket, mock_requests
+    ):
+        """Test that going offline resets _connected, forcing a reconnect POST on recovery."""
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+
+        device.update()  # First poll — connects
+        assert device._connected is True
+        mock_requests.reset_mock()
+
+        # Simulate device going offline: TCP check fails → _set_offline()
+        mock_socket.connect_ex.return_value = 1
+        device.update()
+        assert device._connected is False  # Reset by _set_offline()
+        mock_requests.reset_mock()
+
+        # Device recovers — reconnect POST should fire again
+        mock_socket.connect_ex.return_value = 0
+        device.update()
+        assert mock_requests.post.call_count == 1  # Reconnect POST
+        assert mock_requests.get.call_count == 1  # Status GET
+        assert device._connected is True
 
     def test_update_sets_token_invalid_on_reconnect_failure(
         self, mock_socket, mock_requests
