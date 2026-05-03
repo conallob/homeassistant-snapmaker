@@ -21,6 +21,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -94,3 +95,18 @@ jobs:
       - name: Validate HACS
         run: |
           python3 -c "import json; json.load(open('hacs.json'))"
+
+      - name: Check for stray Python files in repo root
+        run: |
+          # Python integration files belong in custom_components/snapmaker/, not the repo root.
+          # Misplaced root-level .py files break pytest's import path resolution
+          # (it walks up past the repo boundary when __init__.py exists at the root).
+          stray=$(find . -maxdepth 1 -name "*.py")
+          if [ -n "$stray" ]; then
+            echo "ERROR: Found Python files in the repo root that do not belong here:"
+            echo "$stray"
+            echo ""
+            echo "Integration code belongs in custom_components/snapmaker/"
+            echo "Test support files belong in tests/"
+            exit 1
+          fi
