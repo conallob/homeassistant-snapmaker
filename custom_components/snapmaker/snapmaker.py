@@ -51,7 +51,9 @@ class SnapmakerDevice:
         self._toolhead_type: Optional[str] = None
         self._on_token_update: Optional[Callable[[str], None]] = None
         self._token_invalid = False
-        self._connected = False  # True once _connect_with_token() succeeds; reset on offline/401
+        self._connected = (
+            False  # True once _connect_with_token() succeeds; reset on offline/401
+        )
 
     @property
     def host(self) -> str:
