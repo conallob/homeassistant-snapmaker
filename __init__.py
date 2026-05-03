@@ -27,18 +27,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Snapmaker from a config entry."""
     host = entry.data[CONF_HOST]
     saved_token = entry.data.get(CONF_TOKEN)
+    _LOGGER.warning("Setting up Snapmaker for %s with token %s...", host, saved_token[:8] if saved_token else "None")
     snapmaker = SnapmakerDevice(host, token=saved_token)
 
     def _on_token_update(new_token: str) -> None:
-        """Persist new token to config entry data (called from executor thread)."""
         if not new_token:
             return
 
         def _do_update():
             if entry.entry_id not in hass.data.get(DOMAIN, {}):
-                _LOGGER.debug(
-                    "Entry %s already unloaded, skipping token update", entry.entry_id
-                )
                 return
             if new_token != entry.data.get(CONF_TOKEN):
                 new_data = {**entry.data, CONF_TOKEN: new_token}
@@ -53,60 +50,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     reauth_triggered = False
 
     def _update_with_reconnect():
-        """Connect with saved token then fetch status.
-
-        The Snapmaker requires a POST to /api/v1/connect with the saved token
-        to re-establish the session before status can be polled. Without this,
-        the printer returns 401 on every status request even with a valid token.
-        This mirrors how Luban reconnects on startup.
-        """
-        # Step 1: UDP discovery to confirm device is online
         snapmaker._check_online()
         if not snapmaker.available:
+            _LOGGER.warning("Device %s not found via UDP", host)
             return snapmaker._data
 
-        # Step 2: Reconnect with saved token (form-encoded POST, same as Luban)
         if snapmaker.token:
             connected = snapmaker._connect_with_token(snapmaker.token)
             if not connected:
-                _LOGGER.warning(
-                    "Failed to reconnect with saved token for %s, "
-                    "token may have been invalidated",
-                    host,
-                )
+                _LOGGER.warning("Failed to reconnect with saved token for %s", host)
                 snapmaker._token_invalid = True
                 return snapmaker._data
+        else:
+            _LOGGER.warning("No token for %s", host)
 
-        # Step 3: Fetch status (with empty-response retry for warmup)
         snapmaker._get_status_with_retry()
         return snapmaker._data
 
     async def async_update_data():
-        """Fetch data from the Snapmaker device."""
         nonlocal reauth_triggered
+        _LOGGER.warning("async_update_data called for %s", host)
 
         try:
             result = await hass.async_add_executor_job(_update_with_reconnect)
+            _LOGGER.warning("executor job done, result keys: %s", list(result.keys()) if result else None)
 
             async with reauth_lock:
+                _LOGGER.warning("token_invalid=%s reauth_triggered=%s", snapmaker.token_invalid, reauth_triggered)
                 if snapmaker.token_invalid and not reauth_triggered:
                     _LOGGER.error("Token is invalid, triggering reauth flow")
                     reauth_triggered = True
                     entry.async_start_reauth(hass)
-                    raise UpdateFailed(
-                        "Token authentication failed, please reauthorize"
-                    )
+                    raise UpdateFailed("Token authentication failed, please reauthorize")
                 elif snapmaker.token_invalid:
-                    raise UpdateFailed(
-                        "Token authentication failed, reauth in progress"
-                    )
+                    raise UpdateFailed("Token authentication failed, reauth in progress")
 
                 reauth_triggered = False
 
+            _LOGGER.warning("async_update_data returning successfully")
             return result
         except UpdateFailed:
             raise
         except Exception as err:
+            _LOGGER.error("Unexpected error in update: %s", err, exc_info=True)
             raise UpdateFailed(f"Error communicating with Snapmaker: {err}")
 
     coordinator = DataUpdateCoordinator(
@@ -117,7 +103,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         update_interval=timedelta(seconds=30),
     )
 
+    _LOGGER.warning("Calling async_config_entry_first_refresh")
     await coordinator.async_config_entry_first_refresh()
+    _LOGGER.warning("async_config_entry_first_refresh done, last_update_success=%s", coordinator.last_update_success)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
@@ -125,6 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _LOGGER.warning("Platforms set up, coordinator.last_update_success=%s", coordinator.last_update_success)
 
     return True
 
@@ -132,8 +121,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
-
     return unload_ok

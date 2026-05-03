@@ -197,7 +197,10 @@ class SnapmakerDevice:
             "x": None,
             "y": None,
             "z": None,
-            "homing": "N/A",
+            "homed": False,
+            "offset_x": None,
+            "offset_y": None,
+            "offset_z": None,
             "is_filament_out": False,
             "is_door_open": False,
             "has_enclosure": False,
@@ -206,6 +209,8 @@ class SnapmakerDevice:
             "has_air_purifier": False,
             "total_lines": None,
             "current_line": None,
+            "work_speed": None,
+            "print_status": None,
         }
 
     def _check_online(self) -> None:
@@ -603,17 +608,30 @@ class SnapmakerDevice:
         x = data.get("x", 0)
         y = data.get("y", 0)
         z = data.get("z", 0)
-        homing = data.get("homing", "N/A")
+        offset_x = data.get("offsetX", 0)
+        offset_y = data.get("offsetY", 0)
+        offset_z = data.get("offsetZ", 0)
+
+        # homed is a boolean in the API
+        homed = data.get("homed", False)
 
         is_filament_out = data.get("isFilamentOut", False)
-        is_door_open = data.get("isDoorOpen", False)
-        has_enclosure = data.get("enclosure", False)
-        has_rotary_module = data.get("rotaryModule", False)
-        has_emergency_stop = data.get("emergencyStop", False)
-        has_air_purifier = data.get("airPurifier", False)
+
+        # Door state field is isEnclosureDoorOpen, not isDoorOpen
+        is_door_open = data.get("isEnclosureDoorOpen", False)
+
+        # Module presence flags are nested inside moduleList
+        module_list = data.get("moduleList", {})
+        has_enclosure = module_list.get("enclosure", False)
+        has_rotary_module = module_list.get("rotaryModule", False)
+        has_emergency_stop = module_list.get("emergencyStopButton", False)
+        has_air_purifier = module_list.get("airPurifier", False)
 
         total_lines = data.get("totalLines", 0)
         current_line = data.get("currentLine", 0)
+
+        work_speed = data.get("workSpeed")
+        print_status = data.get("printStatus")
 
         spindle_speed = data.get("spindleSpeed")
         laser_power = data.get("laserPower")
@@ -635,7 +653,10 @@ class SnapmakerDevice:
             "x": x,
             "y": y,
             "z": z,
-            "homing": homing,
+            "offset_x": offset_x,
+            "offset_y": offset_y,
+            "offset_z": offset_z,
+            "homed": homed,
             "is_filament_out": is_filament_out,
             "is_door_open": is_door_open,
             "has_enclosure": has_enclosure,
@@ -644,6 +665,8 @@ class SnapmakerDevice:
             "has_air_purifier": has_air_purifier,
             "total_lines": total_lines,
             "current_line": current_line,
+            "work_speed": work_speed,
+            "print_status": print_status,
         }
 
         if spindle_speed is not None:
