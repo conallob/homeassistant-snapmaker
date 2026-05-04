@@ -170,6 +170,22 @@ class SnapmakerDevice:
         )
         return False
 
+    def check_reachability(self) -> bool:
+        """Check if the device is discoverable and its API port is open.
+
+        Used by the config flow for a connectivity-only probe that does NOT
+        attempt token authentication, avoiding a spurious touchscreen prompt.
+        Sets self._model as a side effect of UDP discovery.
+
+        Returns:
+            True if the device responds to UDP discovery and the TCP API port
+            is reachable, False otherwise.
+        """
+        self._check_online()
+        if not self._available:
+            return False
+        return self._check_reachable()
+
     def _connect_with_token(self, token: str) -> bool:
         """Reconnect to the device using an existing known token.
 
@@ -483,6 +499,9 @@ class SnapmakerDevice:
                             _LOGGER.info("Token validated successfully")
                             self._token = token
                             self._token_invalid = False
+                            # Session is now established; next update() can skip
+                            # the reconnect POST and go straight to _get_status().
+                            self._connected = True
                             # Notify callback about new token for persistence
                             if self._on_token_update:
                                 self._on_token_update(token)
