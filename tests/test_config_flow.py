@@ -65,7 +65,7 @@ class TestConfigFlow:
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
         """Test user configuration with connection error."""
-        mock_snapmaker_device.return_value.available = False
+        mock_snapmaker_device.return_value.check_reachability.return_value = False
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -83,7 +83,9 @@ class TestConfigFlow:
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
         """Test user configuration with exception."""
-        mock_snapmaker_device.return_value.update.side_effect = Exception("Test error")
+        mock_snapmaker_device.return_value.check_reachability.side_effect = Exception(
+            "Test error"
+        )
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -209,7 +211,7 @@ class TestConfigFlow:
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
         """Test DHCP discovery that needs user confirmation."""
-        mock_snapmaker_device.return_value.available = False
+        mock_snapmaker_device.return_value.check_reachability.return_value = False
 
         discovery_info = MagicMock()
         discovery_info.ip = "192.168.1.100"
@@ -287,7 +289,7 @@ class TestConfigFlow:
         assert result["step_id"] == "confirm"
 
         # Now try to confirm but device is unavailable
-        mock_snapmaker_device.return_value.available = False
+        mock_snapmaker_device.return_value.check_reachability.return_value = False
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],

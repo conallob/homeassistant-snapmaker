@@ -43,11 +43,13 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(host)
             self._abort_if_unique_id_configured()
 
-            # Validate the connection
+            # Connectivity-only check — avoids triggering a touchscreen prompt
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(snapmaker.update)
-                if snapmaker.available:
+                online = await self.hass.async_add_executor_job(
+                    snapmaker.check_reachability
+                )
+                if online:
                     # Device is online, proceed to token authorization
                     return await self._validate_and_authorize(
                         host, snapmaker.model or host
@@ -79,27 +81,30 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # User has confirmed, now generate token
             snapmaker = SnapmakerDevice(host)
             try:
-                # Generate token with polling (default: 18 attempts × 10s = 3 minutes)
+                # Generate token with polling (default: 18 attempts × 10s = 3 minutes).
+                # On success generate_token() sets _token and _connected=True on this
+                # instance, so the subsequent update() skips the reconnect POST.
                 token = await self.hass.async_add_executor_job(snapmaker.generate_token)
 
                 if token:
-                    # Validate the token works before persisting it
-                    test_device = SnapmakerDevice(host, token=token)
+                    # Reuse the same instance — _connected is already True so
+                    # update() goes straight to _get_status() without sending
+                    # another POST that would trigger a new touchscreen prompt.
                     try:
-                        await self.hass.async_add_executor_job(test_device.update)
-                        if test_device.token_invalid:
+                        await self.hass.async_add_executor_job(snapmaker.update)
+                        if snapmaker.token_invalid:
                             _LOGGER.error(
                                 "Generated token is invalid on first use for %s. "
                                 "Device may have rejected the token or requires re-approval.",
                                 host,
                             )
                             errors["base"] = "auth_failed"
-                        elif not test_device.available:
+                        elif not snapmaker.available:
                             _LOGGER.warning(
                                 "Device not available after token generation for %s. "
                                 "Device status: %s",
                                 host,
-                                test_device.status,
+                                snapmaker.status,
                             )
                             errors["base"] = "cannot_connect"
                         else:
@@ -166,11 +171,13 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(host)
         self._abort_if_unique_id_configured()
 
-        # Validate the connection
+        # Connectivity-only check — avoids triggering a touchscreen prompt
         snapmaker = SnapmakerDevice(host)
         try:
-            result = await self.hass.async_add_executor_job(snapmaker.update)
-            if snapmaker.available:
+            online = await self.hass.async_add_executor_job(
+                snapmaker.check_reachability
+            )
+            if online:
                 # Device is online, proceed to token authorization
                 return await self._validate_and_authorize(host, snapmaker.model or host)
         except Exception:
@@ -186,11 +193,13 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         host = self.context["host"]
 
         if user_input is not None:
-            # Validate the connection again
+            # Connectivity-only check — avoids triggering a touchscreen prompt
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(snapmaker.update)
-                if snapmaker.available:
+                online = await self.hass.async_add_executor_job(
+                    snapmaker.check_reachability
+                )
+                if online:
                     # Device is online, proceed to token authorization
                     return await self._validate_and_authorize(
                         host, snapmaker.model or host
@@ -296,11 +305,13 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         host = self.context.get("host")
 
         if user_input is not None:
-            # Validate device is still online
+            # Connectivity-only check — avoids triggering a touchscreen prompt
             snapmaker = SnapmakerDevice(host)
             try:
-                result = await self.hass.async_add_executor_job(snapmaker.update)
-                if snapmaker.available:
+                online = await self.hass.async_add_executor_job(
+                    snapmaker.check_reachability
+                )
+                if online:
                     self.context["model"] = snapmaker.model or host
                     return await self.async_step_authorize()
                 else:
