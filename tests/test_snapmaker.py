@@ -659,25 +659,30 @@ class TestCheckReachability:
     """Test the public check_reachability() method."""
 
     def test_check_reachability_online(self, mock_socket):
-        """Returns True when UDP discovery and TCP check both succeed."""
+        """Returns True when both UDP discovery and TCP check succeed."""
         device = SnapmakerDevice("192.168.1.100")
         assert device.check_reachability() is True
 
-    def test_check_reachability_offline_udp(self, mock_socket):
-        """Returns False when UDP discovery finds no device."""
+    def test_check_reachability_udp_filtered_but_tcp_open(self, mock_socket):
+        """Returns True when UDP is filtered but port 8080 is reachable.
+
+        UDP broadcast is frequently blocked on networks with VLANs or AP
+        isolation. TCP reachability is the authoritative check since the
+        user supplied an explicit IP address.
+        """
         mock_socket.recvfrom.side_effect = socket.timeout()
         device = SnapmakerDevice("192.168.1.100")
-        assert device.check_reachability() is False
+        assert device.check_reachability() is True
 
     def test_check_reachability_offline_tcp(self, mock_socket):
-        """Returns False when TCP port is closed after UDP discovery succeeds."""
+        """Returns False when TCP port 8080 is closed."""
         mock_socket.connect_ex.return_value = 1
         device = SnapmakerDevice("192.168.1.100")
         with patch("custom_components.snapmaker.snapmaker.time.sleep"):
             assert device.check_reachability() is False
 
-    def test_check_reachability_sets_model(self, mock_socket):
-        """Sets device model as a side effect of UDP discovery."""
+    def test_check_reachability_sets_model_when_udp_works(self, mock_socket):
+        """Sets device model as a side effect of UDP discovery when available."""
         device = SnapmakerDevice("192.168.1.100")
         device.check_reachability()
         assert device.model == "Snapmaker A350"

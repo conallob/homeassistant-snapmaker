@@ -171,19 +171,21 @@ class SnapmakerDevice:
         return False
 
     def check_reachability(self) -> bool:
-        """Check if the device is discoverable and its API port is open.
+        """Check if the device API port is open without attempting authentication.
 
         Used by the config flow for a connectivity-only probe that does NOT
-        attempt token authentication, avoiding a spurious touchscreen prompt.
-        Sets self._model as a side effect of UDP discovery.
+        make any HTTP requests, avoiding a spurious touchscreen prompt.
+
+        UDP discovery is attempted first to populate self._model, but its
+        result does NOT gate the return value — UDP broadcast is frequently
+        filtered on networks with VLANs, AP isolation, or subnet routing.
+        TCP reachability of port 8080 is the authoritative check, since the
+        user has already supplied an explicit IP address.
 
         Returns:
-            True if the device responds to UDP discovery and the TCP API port
-            is reachable, False otherwise.
+            True if the TCP API port is reachable, False otherwise.
         """
-        self._check_online()
-        if not self._available:
-            return False
+        self._check_online()  # best-effort: populates self._model if UDP works
         return self._check_reachable()
 
     def _connect_with_token(self, token: str) -> bool:
