@@ -220,41 +220,48 @@ class SnapmakerDevice:
 
     def update(self) -> Dict[str, Any]:
         """Update device data."""
-        # First check if device is online via discovery
-        self._check_online()
-
-        # If device is online, get detailed status
-        if self._available and self._status != "OFFLINE":
-            # TCP reachability pre-check before making HTTP calls
-            if not self._check_reachable():
-                _LOGGER.warning(
-                    "Device %s discovered but API port %d not reachable",
-                    self._host,
-                    API_PORT,
-                )
-                self._set_offline()
+        if not self._connected:
+            # No active session — discover device via UDP to check availability.
+            self._check_online()
+            if not self._available or self._status == "OFFLINE":
                 return self._data
+        else:
+            # Active session already established (e.g. just after generate_token()).
+            # Skip UDP discovery: we know the device is there because we already
+            # have a working HTTP session. Mark available so the status check
+            # proceeds; _set_offline() will correct this if TCP fails.
+            self._available = True
 
-            if self._token:
-                if not self._connected:
-                    # Reconnect with existing token. Required after HA startup
-                    # (loading a saved token) or when the device reboots and the
-                    # session is lost. _connected is reset to False by _set_offline()
-                    # and on 401, so this POST only fires when actually needed.
-                    if not self._connect_with_token(self._token):
-                        _LOGGER.warning(
-                            "Failed to reconnect with saved token for %s, "
-                            "token may have been invalidated",
-                            self._host,
-                        )
-                        self._token_invalid = True
-                        return self._data
-                    self._connected = True
-            else:
-                self._token = self._get_token()
+        # TCP reachability pre-check before making HTTP calls
+        if not self._check_reachable():
+            _LOGGER.warning(
+                "Device %s API port %d not reachable",
+                self._host,
+                API_PORT,
+            )
+            self._set_offline()
+            return self._data
 
-            if self._token:
-                self._get_status()
+        if self._token:
+            if not self._connected:
+                # Reconnect with existing token. Required after HA startup
+                # (loading a saved token) or when the device reboots and the
+                # session is lost. _connected is reset to False by _set_offline()
+                # and on 401, so this POST only fires when actually needed.
+                if not self._connect_with_token(self._token):
+                    _LOGGER.warning(
+                        "Failed to reconnect with saved token for %s, "
+                        "token may have been invalidated",
+                        self._host,
+                    )
+                    self._token_invalid = True
+                    return self._data
+                self._connected = True
+        else:
+            self._token = self._get_token()
+
+        if self._token:
+            self._get_status()
 
         return self._data
 
