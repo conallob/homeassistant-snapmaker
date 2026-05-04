@@ -655,6 +655,41 @@ class TestTCPReachability:
             assert mock_sleep.call_args_list == expected_sleeps
 
 
+class TestCheckReachability:
+    """Test the public check_reachability() method."""
+
+    def test_check_reachability_online(self, mock_socket):
+        """Returns True when UDP discovery and TCP check both succeed."""
+        device = SnapmakerDevice("192.168.1.100")
+        assert device.check_reachability() is True
+
+    def test_check_reachability_offline_udp(self, mock_socket):
+        """Returns False when UDP discovery finds no device."""
+        mock_socket.recvfrom.side_effect = socket.timeout()
+        device = SnapmakerDevice("192.168.1.100")
+        assert device.check_reachability() is False
+
+    def test_check_reachability_offline_tcp(self, mock_socket):
+        """Returns False when TCP port is closed after UDP discovery succeeds."""
+        mock_socket.connect_ex.return_value = 1
+        device = SnapmakerDevice("192.168.1.100")
+        with patch("custom_components.snapmaker.snapmaker.time.sleep"):
+            assert device.check_reachability() is False
+
+    def test_check_reachability_sets_model(self, mock_socket):
+        """Sets device model as a side effect of UDP discovery."""
+        device = SnapmakerDevice("192.168.1.100")
+        device.check_reachability()
+        assert device.model == "Snapmaker A350"
+
+    def test_check_reachability_no_token_ops(self, mock_socket, mock_requests):
+        """Does not make any HTTP requests (no token operations)."""
+        device = SnapmakerDevice("192.168.1.100")
+        device.check_reachability()
+        mock_requests.post.assert_not_called()
+        mock_requests.get.assert_not_called()
+
+
 class TestTokenPersistence:
     """Test token persistence feature."""
 
