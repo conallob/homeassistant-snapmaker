@@ -147,6 +147,56 @@ class TestConfigFlow:
             CONF_TOKEN: "test-token-123",
         }
 
+    async def test_authorize_cannot_connect_after_token_generation(
+        self, hass, mock_snapmaker_device, mock_setup_entry
+    ):
+        """Test authorize step when device becomes unreachable after token is generated."""
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
+        mock_snapmaker_device.return_value.available = (
+            False  # device gone after token gen
+        )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_HOST: "192.168.1.100"}
+        )
+        assert result["step_id"] == "authorize"
+
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "authorize"
+        assert result["errors"] == {"base": "cannot_connect"}
+
+    async def test_authorize_unknown_error_on_update_exception(
+        self, hass, mock_snapmaker_device, mock_setup_entry
+    ):
+        """Test authorize step when update() raises an unexpected exception."""
+        mock_snapmaker_device.return_value.generate_token.return_value = (
+            "test-token-123"
+        )
+        mock_snapmaker_device.return_value.update.side_effect = Exception(
+            "network error"
+        )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_HOST: "192.168.1.100"}
+        )
+        assert result["step_id"] == "authorize"
+
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "authorize"
+        assert result["errors"] == {"base": "unknown"}
+
     async def test_user_flow_already_configured(
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):

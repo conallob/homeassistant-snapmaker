@@ -1032,3 +1032,29 @@ class TestTokenReconnect:
         assert mock_requests.post.call_count == 2
         assert mock_requests.get.call_count == 1
         assert device.data["tool_head"] == "Extruder"
+
+    def test_generate_token_sets_connected(self, mock_requests):
+        """generate_token() sets _connected=True so the next update() skips the reconnect POST."""
+        device = SnapmakerDevice("192.168.1.100")
+        token = device.generate_token(max_attempts=1)
+
+        assert token == "test-token-123"
+        assert device._connected is True
+
+    def test_update_after_generate_token_skips_reconnect_post(
+        self, mock_socket, mock_requests
+    ):
+        """update() must not call _connect_with_token() when _connected is already True.
+
+        After generate_token() the session is established. A second reconnect POST
+        would trigger another touchscreen prompt — the bug this flag prevents.
+        """
+        device = SnapmakerDevice("192.168.1.100")
+        device.generate_token(max_attempts=1)
+        mock_requests.reset_mock()  # clear the POSTs from generate_token
+
+        device.update()
+
+        # Only the status GET should fire — no reconnect POST
+        assert mock_requests.post.call_count == 0
+        assert mock_requests.get.call_count == 1
