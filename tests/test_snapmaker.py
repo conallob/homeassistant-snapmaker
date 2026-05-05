@@ -34,11 +34,13 @@ class TestSnapmakerDevice:
         assert device.token == "saved-token-456"
 
     def test_update_offline_device(self, mock_socket):
-        """Test update when device is offline."""
+        """Test update when device is offline (both UDP and TCP unreachable)."""
         mock_socket.recvfrom.side_effect = socket.timeout()
+        mock_socket.connect_ex.return_value = 1  # TCP also unreachable
 
-        device = SnapmakerDevice("192.168.1.100")
-        result = device.update()
+        with patch("custom_components.snapmaker.snapmaker.time.sleep"):
+            device = SnapmakerDevice("192.168.1.100")
+            result = device.update()
 
         assert device.available is False
         assert device.status == "OFFLINE"
@@ -1063,3 +1065,51 @@ class TestTokenReconnect:
         # Only the status GET should fire — no reconnect POST
         assert mock_requests.post.call_count == 0
         assert mock_requests.get.call_count == 1
+
+    def test_update_connected_skips_udp_when_connected(
+        self, mock_socket, mock_requests
+    ):
+        """update() skips UDP discovery entirely when _connected=True.
+
+        Regression test: on UDP-filtered networks (VLANs, AP isolation), the
+        _connected=True path must never touch the UDP socket. Doing so would
+        stall the update for up to MAX_RETRIES × SOCKET_TIMEOUT seconds and
+        then incorrectly mark the device offline via _set_offline().
+        """
+        mock_socket.recvfrom.side_effect = socket.timeout()  # UDP filtered
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device._connected = True
+        device._available = True
+
+        device.update()
+
+        # No UDP sends — socket.sendto must not have been called
+        mock_socket.sendto.assert_not_called()
+        # Device stays available; status GET was issued
+        assert device.available is True
+        assert mock_requests.get.call_count == 1
+
+    def test_update_not_connected_udp_filtered_tcp_open(
+        self, mock_socket, mock_requests
+    ):
+        """update() recovers after offline when UDP is filtered but TCP is open.
+
+        When a device goes offline, _connected is reset to False. On the next
+        update() cycle, _check_online() (UDP) is called and times out on
+        UDP-filtered networks. With TCP as the authoritative check the update
+        must still proceed — connecting with the saved token and issuing a
+        status GET — rather than returning early with an offline result.
+        """
+        mock_socket.recvfrom.side_effect = socket.timeout()  # UDP filtered
+
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        # Simulate the post-offline state: _connected reset by _set_offline()
+        device._connected = False
+
+        device.update()
+
+        # One reconnect POST + one status GET despite UDP timeout
+        assert mock_requests.post.call_count == 1
+        assert mock_requests.get.call_count == 1
+        assert device.available is True
+        assert device._connected is True

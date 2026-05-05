@@ -221,10 +221,10 @@ class SnapmakerDevice:
     def update(self) -> Dict[str, Any]:
         """Update device data."""
         if not self._connected:
-            # No active session — discover device via UDP to check availability.
+            # Best-effort UDP discovery to populate self._model/self._status.
+            # Result does NOT gate the update — UDP broadcast is frequently
+            # filtered on networks with VLANs or AP isolation. TCP is authoritative.
             self._check_online()
-            if not self._available or self._status == "OFFLINE":
-                return self._data
         else:
             # Active session already established (e.g. just after generate_token()).
             # Skip UDP discovery: we know the device is there because we already
@@ -241,6 +241,9 @@ class SnapmakerDevice:
             )
             self._set_offline()
             return self._data
+
+        # TCP succeeded — device is reachable regardless of UDP outcome
+        self._available = True
 
         if self._token:
             if not self._connected:
