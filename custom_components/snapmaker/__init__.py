@@ -7,6 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_TOKEN, DOMAIN
@@ -17,11 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 # List of platforms to support
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
-
-async def async_setup(hass: HomeAssistant, config: dict):
-    """Set up the Snapmaker component."""
-    hass.data.setdefault(DOMAIN, {})
-    return True
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
