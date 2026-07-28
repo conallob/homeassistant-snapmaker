@@ -178,6 +178,30 @@ Test the integration by:
 - **Error Handling**: Connection failures set device status to "OFFLINE" and
   populate sensors with default values (0 for temperatures, "N/A" for strings).
 
+## Known Limitations: Multi-Model Support
+
+This integration only implements Snapmaker's legacy HTTP token API
+(`/api/v1/connect`, `/api/v1/status` on port 8080), which is what the
+Snapmaker 2.0 series (A150/A250/A350) speaks. Other models in the product
+line use different protocols entirely, and are not yet supported:
+
+- **Artisan / J1 (recent firmware)**: The touchscreen app no longer
+  implements `/api/v1/connect` and returns an HTTP 500. These devices (and
+  Luban) instead communicate over Snapmaker's proprietary binary **SACP**
+  protocol on **TCP port 8888** (see `NiteCrwlr/playground` and
+  `macdylan/sm2uploader`'s `sacp.go`/`connector_sacp.go` for reference).
+- **U1**: Runs Klipper-based "Paxx" firmware and exposes a **Moonraker**
+  (Klipper) API instead of the legacy HTTP API (confirmed by users for whom
+  the Moonraker HA integration connects successfully). See
+  `macdylan/sm2uploader`'s `connector_moonraker.go` for reference.
+
+`SnapmakerDevice.unsupported_protocol_reason` is set when a `/api/v1/connect`
+call fails in a way that looks like one of these unsupported-firmware cases
+(HTTP 500, or a non-JSON response), so the config flow can surface a clear
+`unsupported_firmware` error instead of a generic "cannot connect" message.
+Adding real support for SACP and/or Moonraker would require new connector
+implementations parallel to the existing HTTP-based `SnapmakerDevice`.
+
 ## Important Constraints
 
 - Minimum Home Assistant version: 2023.8.0 (specified in hacs.json)

@@ -27,6 +27,12 @@ REACHABILITY_MAX_RETRIES = 2  # Max retries for reachability check
 # Base for exponential backoff (seconds). Kept low because time.sleep()
 # blocks the executor thread during the coordinator update cycle.
 REACHABILITY_BACKOFF_BASE = 1
+# Some devices (e.g. Snapmaker 2.0 series) briefly return an empty status
+# response while the touchscreen is dismissing the just-approved auth
+# dialog. A couple of short retries avoids a spurious "cannot connect"
+# right after token generation succeeds.
+STATUS_EMPTY_RETRY_COUNT = 3
+STATUS_EMPTY_RETRY_DELAY = 1.0  # Seconds between empty-response retries
 
 # Keys to strip from the raw API response before exposing as diagnostic attributes
 SENSITIVE_API_KEYS = {"token"}
@@ -51,6 +57,7 @@ class SnapmakerDevice:
         self._toolhead_type: Optional[str] = None
         self._on_token_update: Optional[Callable[[str], None]] = None
         self._token_invalid = False
+        self._unsupported_protocol_reason: Optional[str] = None
         self._connected = (
             False  # True once _connect_with_token() succeeds; reset on offline/401
         )
@@ -123,6 +130,41 @@ class SnapmakerDevice:
             bool: True if token needs reauthorization, False otherwise.
         """
         return self._token_invalid
+
+    @property
+    def unsupported_protocol_reason(self) -> Optional[str]:
+        """Return a human-readable reason if the device's firmware appears to not
+
+        support the legacy HTTP token API this integration uses, or None if no
+        such condition has been detected.
+
+        Newer Snapmaker firmware (e.g. Artisan/J1 on recent firmware, and the
+        Klipper-based U1) replaces or removes the legacy `/api/v1/connect` HTTP
+        API in favor of a proprietary binary protocol (SACP) or a
+        Moonraker/Klipper API, neither of which this integration implements yet.
+        """
+        return self._unsupported_protocol_reason
+
+    def _classify_connect_failure(self, response: "requests.Response") -> None:
+        """Record a reason if a /api/v1/connect failure looks like an
+
+        unsupported-firmware condition rather than a transient/auth error.
+        """
+        if response.status_code == 500:
+            _LOGGER.error(
+                "Device %s returned HTTP 500 from /api/v1/connect. This "
+                "typically means the printer's firmware does not implement "
+                "the legacy HTTP token API this integration relies on "
+                "(seen on Artisan/J1 with newer firmware, which instead use "
+                "Snapmaker's binary SACP protocol). Response: %s",
+                self._host,
+                response.text[:200],
+            )
+            self._unsupported_protocol_reason = (
+                "Device rejected the legacy connect API (HTTP 500). This model "
+                "or firmware version likely requires a protocol this "
+                "integration does not yet support (e.g. SACP on Artisan/J1)."
+            )
 
     def set_token_update_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback to be called when token is updated."""
@@ -444,6 +486,7 @@ class SnapmakerDevice:
         Returns:
             Optional[str]: Authentication token if successful, None otherwise
         """
+        self._unsupported_protocol_reason = None
         try:
             url = f"http://{self._host}:{API_PORT}/api/v1/connect"
 
@@ -460,6 +503,7 @@ class SnapmakerDevice:
                     http_err,
                     response.text[:200],
                 )
+                self._classify_connect_failure(response)
                 return None
 
             # Extract token from response
@@ -470,6 +514,11 @@ class SnapmakerDevice:
                     "Failed to parse token response: %s. Response: %s",
                     json_err,
                     response.text[:200],
+                )
+                self._unsupported_protocol_reason = (
+                    "Device did not return a JSON token response from the "
+                    "legacy connect API. This model or firmware version may "
+                    "require a protocol this integration does not yet support."
                 )
                 return None
 
@@ -574,6 +623,7 @@ class SnapmakerDevice:
         """
         # Reset token invalid flag at start to ensure clean state
         self._token_invalid = False
+        self._unsupported_protocol_reason = None
 
         try:
             url = f"http://{self._host}:{API_PORT}/api/v1/connect"
@@ -590,6 +640,7 @@ class SnapmakerDevice:
                     http_err,
                     response.text[:200],
                 )
+                self._classify_connect_failure(response)
                 return None
 
             # Extract token from response
@@ -600,6 +651,11 @@ class SnapmakerDevice:
                     "Failed to parse token response: %s. Response: %s",
                     json_err,
                     response.text[:200],
+                )
+                self._unsupported_protocol_reason = (
+                    "Device did not return a JSON token response from the "
+                    "legacy connect API. This model or firmware version may "
+                    "require a protocol this integration does not yet support."
                 )
                 return None
 
@@ -641,9 +697,28 @@ class SnapmakerDevice:
         """Get status from Snapmaker device."""
         try:
             url = f"http://{self._host}:{API_PORT}/api/v1/status"
-            response = requests.get(
-                url, params={"token": self._token}, timeout=API_TIMEOUT
-            )
+
+            # Snapmaker 2.0-series devices can briefly return an empty body
+            # while the touchscreen is dismissing the auth dialog just
+            # approved during token generation. Retry a few times before
+            # giving up, rather than immediately reporting offline.
+            response = None
+            for attempt in range(STATUS_EMPTY_RETRY_COUNT):
+                response = requests.get(
+                    url, params={"token": self._token}, timeout=API_TIMEOUT
+                )
+                if response.status_code == 401 or (
+                    response.text and response.text.strip()
+                ):
+                    break
+                if attempt < STATUS_EMPTY_RETRY_COUNT - 1:
+                    _LOGGER.debug(
+                        "Empty status response from %s (attempt %d/%d), retrying",
+                        self._host,
+                        attempt + 1,
+                        STATUS_EMPTY_RETRY_COUNT,
+                    )
+                    time.sleep(STATUS_EMPTY_RETRY_DELAY)
 
             # Check for authentication errors
             if response.status_code == 401:
@@ -656,7 +731,10 @@ class SnapmakerDevice:
 
             # Check if response is valid
             if not response.text or response.text.strip() == "":
-                _LOGGER.error("Empty response from Snapmaker status API")
+                _LOGGER.error(
+                    "Empty response from Snapmaker status API after %d attempts",
+                    STATUS_EMPTY_RETRY_COUNT,
+                )
                 self._available = False
                 self._status = "OFFLINE"
                 return

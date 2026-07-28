@@ -147,6 +147,13 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     except Exception as validation_err:
                         _LOGGER.exception("Error validating new token")
                         errors["base"] = "unknown"
+                elif snapmaker.unsupported_protocol_reason:
+                    _LOGGER.error(
+                        "Device %s appears unsupported: %s",
+                        host,
+                        snapmaker.unsupported_protocol_reason,
+                    )
+                    errors["base"] = "unsupported_firmware"
                 else:
                     errors["base"] = "auth_failed"
             except Exception as err:
