@@ -9,6 +9,7 @@ from custom_components.snapmaker.snapmaker import (
     API_PORT,
     REACHABILITY_MAX_RETRIES,
     SENSITIVE_API_KEYS,
+    STATUS_EMPTY_RETRY_COUNT,
     SnapmakerDevice,
 )
 
@@ -148,6 +149,44 @@ class TestSnapmakerDevice:
         token = device._get_token()
 
         assert token is None
+
+    def test_get_token_http_500_sets_unsupported_protocol_reason(self, mock_requests):
+        """Test that an HTTP 500 on connect (e.g. Artisan/J1) is flagged as unsupported firmware."""
+        error_response = MagicMock(status_code=500, text="null object reference")
+        error_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=error_response
+        )
+        mock_requests.post.return_value = error_response
+
+        device = SnapmakerDevice("192.168.1.100")
+        token = device._get_token()
+
+        assert token is None
+        assert device.unsupported_protocol_reason is not None
+
+    def test_get_token_non_json_connect_response_sets_unsupported_protocol_reason(
+        self, mock_requests
+    ):
+        """Test that a non-JSON connect response is flagged as unsupported firmware."""
+        mock_requests.post.return_value.text = "<html>not json</html>"
+
+        device = SnapmakerDevice("192.168.1.100")
+        token = device._get_token()
+
+        assert token is None
+        assert device.unsupported_protocol_reason is not None
+
+    def test_get_token_normal_failure_leaves_unsupported_protocol_reason_unset(
+        self, mock_requests
+    ):
+        """Test a plain auth failure (no token in response) is not flagged as unsupported."""
+        mock_requests.post.return_value.text = "{}"
+
+        device = SnapmakerDevice("192.168.1.100")
+        token = device._get_token()
+
+        assert token is None
+        assert device.unsupported_protocol_reason is None
 
     def test_get_status_single_extruder(self, mock_requests):
         """Test status retrieval for single extruder device."""
@@ -349,16 +388,36 @@ class TestSnapmakerDevice:
         assert device.data["progress"] == 75.0
 
     def test_get_status_empty_response(self, mock_requests):
-        """Test status retrieval with empty response."""
+        """Test status retrieval with empty response exhausts retries and goes offline."""
         mock_requests.get.return_value.text = ""
 
         device = SnapmakerDevice("192.168.1.100")
         device._token = "test-token-123"
         device._available = True
-        device._get_status()
+        with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
+            device._get_status()
 
         assert device.available is False
         assert device.status == "OFFLINE"
+        assert mock_requests.get.call_count == STATUS_EMPTY_RETRY_COUNT
+        assert mock_sleep.call_count == STATUS_EMPTY_RETRY_COUNT - 1
+
+    def test_get_status_empty_response_then_succeeds(self, mock_requests):
+        """Test the post-auth race: empty bodies are retried until a real one arrives."""
+        empty_response = MagicMock(status_code=200, text="")
+        good_response = mock_requests.get.return_value
+        mock_requests.get.side_effect = [empty_response, empty_response, good_response]
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token-123"
+        device._available = True
+        with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
+            device._get_status()
+
+        assert device.available is True
+        assert device.status == "IDLE"
+        assert mock_requests.get.call_count == 3
+        assert mock_sleep.call_count == 2
 
     def test_get_status_invalid_json(self, mock_requests):
         """Test status retrieval with invalid JSON."""

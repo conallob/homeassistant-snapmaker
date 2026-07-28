@@ -133,10 +133,9 @@ class SnapmakerDevice:
 
     @property
     def unsupported_protocol_reason(self) -> Optional[str]:
-        """Return a human-readable reason if the device's firmware appears to not
+        """Return why the device's firmware may not support the legacy HTTP API.
 
-        support the legacy HTTP token API this integration uses, or None if no
-        such condition has been detected.
+        Returns None if no such condition has been detected.
 
         Newer Snapmaker firmware (e.g. Artisan/J1 on recent firmware, and the
         Klipper-based U1) replaces or removes the legacy `/api/v1/connect` HTTP
@@ -146,10 +145,7 @@ class SnapmakerDevice:
         return self._unsupported_protocol_reason
 
     def _classify_connect_failure(self, response: "requests.Response") -> None:
-        """Record a reason if a /api/v1/connect failure looks like an
-
-        unsupported-firmware condition rather than a transient/auth error.
-        """
+        """Record a reason if a /api/v1/connect failure looks like unsupported firmware."""
         if response.status_code == 500:
             _LOGGER.error(
                 "Device %s returned HTTP 500 from /api/v1/connect. This "
