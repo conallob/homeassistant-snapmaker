@@ -302,6 +302,9 @@ class SnapmakerDevice:
                 # (loading a saved token) or when the device reboots and the
                 # session is lost. _connected is reset to False by _set_offline()
                 # and on 401, so this POST only fires when actually needed.
+                # This path reuses an already-trusted token silently, with no
+                # touchscreen dialog to dismiss, so it doesn't need the
+                # settle-retry protection that follows a fresh handshake.
                 if not self._connect_with_token(self._token):
                     _LOGGER.warning(
                         "Failed to reconnect with saved token for %s, "
