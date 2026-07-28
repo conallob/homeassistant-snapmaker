@@ -147,6 +147,35 @@ class TestConfigFlow:
             CONF_TOKEN: "test-token-123",
         }
 
+    async def test_authorize_unsupported_firmware(
+        self, hass, mock_snapmaker_device, mock_setup_entry
+    ):
+        """Test authorize step surfaces unsupported_firmware when the device flags it.
+
+        This is the Artisan/J1/U1 case: generate_token() fails and the device
+        reports a likely protocol mismatch instead of a plain auth failure.
+        """
+        mock_snapmaker_device.return_value.generate_token.return_value = None
+        mock_snapmaker_device.return_value.unsupported_protocol_reason = (
+            "Device rejected the legacy connect API (HTTP 500)."
+        )
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: "192.168.1.100"},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {},
+        )
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "authorize"
+        assert result["errors"] == {"base": "unsupported_firmware"}
+
     async def test_authorize_cannot_connect_after_token_generation(
         self, hass, mock_snapmaker_device, mock_setup_entry
     ):
