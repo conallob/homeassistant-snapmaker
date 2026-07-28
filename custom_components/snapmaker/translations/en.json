@@ -24,7 +24,7 @@
     "error": {
       "cannot_connect": "Failed to connect to the Snapmaker. Please check the IP address and make sure the printer is powered on.",
       "auth_failed": "Failed to authorize with Snapmaker. Please ensure you approved the connection on the touchscreen and try again.",
-      "unsupported_firmware": "This printer's firmware does not support the legacy HTTP API this integration uses. This is a known issue with the Artisan, J1, and U1 (Klipper/Moonraker) models on newer firmware, which are not yet supported.",
+      "unsupported_firmware": "This printer's firmware rejected the legacy connect API this integration uses (seen on Artisan/J1 models running newer firmware, which speak a different protocol). This model is not yet supported.",
       "unknown": "Unexpected error occurred."
     },
     "abort": {

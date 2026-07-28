@@ -58,6 +58,11 @@ class SnapmakerDevice:
         self._on_token_update: Optional[Callable[[str], None]] = None
         self._token_invalid = False
         self._unsupported_protocol_reason: Optional[str] = None
+        # Set True right after a fresh token handshake succeeds, so the very
+        # next _get_status() call retries on an empty body (the touchscreen
+        # may still be dismissing the auth dialog). Consumed (cleared) by
+        # that call so steady-state polling doesn't pay the retry cost.
+        self._settle_retries_pending = False
         self._connected = (
             False  # True once _connect_with_token() succeeds; reset on offline/401
         )
@@ -144,7 +149,7 @@ class SnapmakerDevice:
         """
         return self._unsupported_protocol_reason
 
-    def _classify_connect_failure(self, response: "requests.Response") -> None:
+    def _classify_connect_failure(self, response: requests.Response) -> None:
         """Record a reason if a /api/v1/connect failure looks like unsupported firmware."""
         if response.status_code == 500:
             _LOGGER.error(
@@ -161,6 +166,14 @@ class SnapmakerDevice:
                 "or firmware version likely requires a protocol this "
                 "integration does not yet support (e.g. SACP on Artisan/J1)."
             )
+
+    def _mark_non_json_connect_response(self) -> None:
+        """Record a reason when /api/v1/connect returns a non-JSON body."""
+        self._unsupported_protocol_reason = (
+            "Device did not return a JSON token response from the "
+            "legacy connect API. This model or firmware version may "
+            "require a protocol this integration does not yet support."
+        )
 
     def set_token_update_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback to be called when token is updated."""
@@ -511,11 +524,7 @@ class SnapmakerDevice:
                     json_err,
                     response.text[:200],
                 )
-                self._unsupported_protocol_reason = (
-                    "Device did not return a JSON token response from the "
-                    "legacy connect API. This model or firmware version may "
-                    "require a protocol this integration does not yet support."
-                )
+                self._mark_non_json_connect_response()
                 return None
 
             if not token:
@@ -559,6 +568,7 @@ class SnapmakerDevice:
                             # Session is now established; next update() can skip
                             # the reconnect POST and go straight to _get_status().
                             self._connected = True
+                            self._settle_retries_pending = True
                             # Notify callback about new token for persistence
                             if self._on_token_update:
                                 self._on_token_update(token)
@@ -648,11 +658,7 @@ class SnapmakerDevice:
                     json_err,
                     response.text[:200],
                 )
-                self._unsupported_protocol_reason = (
-                    "Device did not return a JSON token response from the "
-                    "legacy connect API. This model or firmware version may "
-                    "require a protocol this integration does not yet support."
-                )
+                self._mark_non_json_connect_response()
                 return None
 
             if not token:
@@ -672,6 +678,7 @@ class SnapmakerDevice:
                 if response_data.get("token") == token:
                     _LOGGER.info("Successfully connected to Snapmaker")
                     self._token_invalid = False
+                    self._settle_retries_pending = True
                     # Notify callback about new token for persistence
                     if self._on_token_update:
                         self._on_token_update(token)
@@ -696,10 +703,16 @@ class SnapmakerDevice:
 
             # Snapmaker 2.0-series devices can briefly return an empty body
             # while the touchscreen is dismissing the auth dialog just
-            # approved during token generation. Retry a few times before
-            # giving up, rather than immediately reporting offline.
+            # approved during token generation. Only retry right after a
+            # fresh handshake (the flag is cleared here either way) so
+            # steady-state polling of a genuinely offline device isn't
+            # slowed down on every 30s cycle.
+            retry_on_empty = self._settle_retries_pending
+            self._settle_retries_pending = False
+            retry_count = STATUS_EMPTY_RETRY_COUNT if retry_on_empty else 1
+
             response = None
-            for attempt in range(STATUS_EMPTY_RETRY_COUNT):
+            for attempt in range(retry_count):
                 response = requests.get(
                     url, params={"token": self._token}, timeout=API_TIMEOUT
                 )
@@ -707,12 +720,12 @@ class SnapmakerDevice:
                     response.text and response.text.strip()
                 ):
                     break
-                if attempt < STATUS_EMPTY_RETRY_COUNT - 1:
+                if attempt < retry_count - 1:
                     _LOGGER.debug(
                         "Empty status response from %s (attempt %d/%d), retrying",
                         self._host,
                         attempt + 1,
-                        STATUS_EMPTY_RETRY_COUNT,
+                        retry_count,
                     )
                     time.sleep(STATUS_EMPTY_RETRY_DELAY)
 
@@ -729,7 +742,7 @@ class SnapmakerDevice:
             if not response.text or response.text.strip() == "":
                 _LOGGER.error(
                     "Empty response from Snapmaker status API after %d attempts",
-                    STATUS_EMPTY_RETRY_COUNT,
+                    retry_count,
                 )
                 self._available = False
                 self._status = "OFFLINE"

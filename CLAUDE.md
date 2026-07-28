@@ -195,10 +195,18 @@ line use different protocols entirely, and are not yet supported:
   the Moonraker HA integration connects successfully). See
   `macdylan/sm2uploader`'s `connector_moonraker.go` for reference.
 
-`SnapmakerDevice.unsupported_protocol_reason` is set when a `/api/v1/connect`
-call fails in a way that looks like one of these unsupported-firmware cases
-(HTTP 500, or a non-JSON response), so the config flow can surface a clear
-`unsupported_firmware` error instead of a generic "cannot connect" message.
+`SnapmakerDevice.unsupported_protocol_reason` is set when `/api/v1/connect`
+responds but in a way that looks like unsupported firmware (HTTP 500, or a
+non-JSON body) — confirmed to catch the Artisan/J1 case from issue #19. It
+does **not** currently catch the U1 case: a device that doesn't speak the
+legacy HTTP API at all on port 8080 raises a connection-level
+`requests.exceptions.RequestException` rather than returning an unexpected
+response, and that path still falls through to the generic
+`cannot_connect`/`auth_failed` errors. Broadening detection to treat
+connection-refused/timeout as a signal would risk misclassifying ordinary
+offline/unreachable devices, so it's left as a known gap rather than a
+heuristic guess.
+
 Adding real support for SACP and/or Moonraker would require new connector
 implementations parallel to the existing HTTP-based `SnapmakerDevice`.
 

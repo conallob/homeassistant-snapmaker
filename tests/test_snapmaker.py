@@ -388,12 +388,17 @@ class TestSnapmakerDevice:
         assert device.data["progress"] == 75.0
 
     def test_get_status_empty_response(self, mock_requests):
-        """Test status retrieval with empty response exhausts retries and goes offline."""
+        """Test status retrieval with empty response exhausts retries and goes offline.
+
+        Retries only happen right after a fresh handshake (_settle_retries_pending),
+        simulating the post-auth window this behavior targets.
+        """
         mock_requests.get.return_value.text = ""
 
         device = SnapmakerDevice("192.168.1.100")
         device._token = "test-token-123"
         device._available = True
+        device._settle_retries_pending = True
         with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
             device._get_status()
 
@@ -411,6 +416,7 @@ class TestSnapmakerDevice:
         device = SnapmakerDevice("192.168.1.100")
         device._token = "test-token-123"
         device._available = True
+        device._settle_retries_pending = True
         with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
             device._get_status()
 
@@ -418,6 +424,46 @@ class TestSnapmakerDevice:
         assert device.status == "IDLE"
         assert mock_requests.get.call_count == 3
         assert mock_sleep.call_count == 2
+
+    def test_get_status_empty_response_steady_state_no_retry(self, mock_requests):
+        """Test that steady-state polling (no fresh handshake) does not retry on empty body.
+
+        The retry exists only to ride out the brief post-auth touchscreen race;
+        it must not slow down every 30s poll of a device that is genuinely
+        returning an empty body (e.g. actually offline).
+        """
+        mock_requests.get.return_value.text = ""
+
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token-123"
+        device._available = True
+        assert device._settle_retries_pending is False
+        with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
+            device._get_status()
+
+        assert device.available is False
+        assert device.status == "OFFLINE"
+        assert mock_requests.get.call_count == 1
+        assert mock_sleep.call_count == 0
+
+    def test_settle_retries_pending_consumed_only_once(self, mock_requests):
+        """Test the post-auth retry only applies to the first poll after a handshake."""
+        device = SnapmakerDevice("192.168.1.100")
+        device.generate_token(max_attempts=1)
+        assert device._settle_retries_pending is True
+
+        mock_requests.get.return_value.text = ""
+        with patch("custom_components.snapmaker.snapmaker.time.sleep"):
+            device._get_status()  # first poll: retries, then goes offline
+
+        assert device._settle_retries_pending is False
+        mock_requests.get.reset_mock()
+
+        with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
+            device._get_status()  # steady-state poll: no retry this time
+
+        assert mock_requests.get.call_count == 1
+        assert mock_sleep.call_count == 0
 
     def test_get_status_invalid_json(self, mock_requests):
         """Test status retrieval with invalid JSON."""
