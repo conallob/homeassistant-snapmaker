@@ -1099,6 +1099,34 @@ class TestTokenReconnect:
         assert mock_requests.get.call_count == 1
         assert device.data["tool_head"] == "Extruder"
 
+    def test_generate_token_http_500_sets_unsupported_protocol_reason(
+        self, mock_requests
+    ):
+        """generate_token() also flags an HTTP 500 on connect as unsupported firmware."""
+        error_response = MagicMock(status_code=500, text="null object reference")
+        error_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=error_response
+        )
+        mock_requests.post.return_value = error_response
+
+        device = SnapmakerDevice("192.168.1.100")
+        token = device.generate_token(max_attempts=1)
+
+        assert token is None
+        assert device.unsupported_protocol_reason is not None
+
+    def test_generate_token_non_json_connect_response_sets_unsupported_protocol_reason(
+        self, mock_requests
+    ):
+        """generate_token() flags a non-JSON connect response as unsupported firmware."""
+        mock_requests.post.return_value.text = "<html>not json</html>"
+
+        device = SnapmakerDevice("192.168.1.100")
+        token = device.generate_token(max_attempts=1)
+
+        assert token is None
+        assert device.unsupported_protocol_reason is not None
+
     def test_generate_token_sets_connected(self, mock_requests):
         """generate_token() sets _connected=True so the next update() skips the reconnect POST."""
         device = SnapmakerDevice("192.168.1.100")
