@@ -81,7 +81,7 @@ class SnapmakerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # User has confirmed, now generate token
             snapmaker = SnapmakerDevice(host)
             try:
-                # Generate token with polling (default: 18 attempts × 10s = 3 minutes).
+                # Generate token with polling (default: 90 attempts × 2s = 3 minutes).
                 # On success generate_token() sets _token and _connected=True on this
                 # instance, so the subsequent update() skips the reconnect POST.
                 token = await self.hass.async_add_executor_job(snapmaker.generate_token)

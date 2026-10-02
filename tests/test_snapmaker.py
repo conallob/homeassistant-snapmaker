@@ -7,6 +7,7 @@ import requests
 
 from custom_components.snapmaker.snapmaker import (
     API_PORT,
+    BUSY_REAUTH_POLLS,
     REACHABILITY_MAX_RETRIES,
     SENSITIVE_API_KEYS,
     STATUS_EMPTY_RETRY_COUNT,
@@ -54,7 +55,7 @@ class TestSnapmakerDevice:
 
     def test_update_online_device(self, mock_socket, mock_requests):
         """Test update when device is online."""
-        device = SnapmakerDevice("192.168.1.100")
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
         result = device.update()
 
         assert device.available is True
@@ -113,77 +114,25 @@ class TestSnapmakerDevice:
         # Should retry MAX_RETRIES times
         assert mock_socket.sendto.call_count == 5
 
-    def test_get_token_success(self, mock_requests):
-        """Test successful token retrieval."""
-        device = SnapmakerDevice("192.168.1.100")
-        token = device._get_token()
-
-        assert token == "test-token-123"
-        assert mock_requests.post.call_count == 2
-
-    def test_get_token_calls_update_callback(self, mock_requests):
+    def test_generate_token_calls_update_callback(self, mock_requests):
         """Test that token update callback is called on new token."""
         callback = MagicMock()
         device = SnapmakerDevice("192.168.1.100")
         device.set_token_update_callback(callback)
 
-        token = device._get_token()
+        token = device.generate_token(max_attempts=1)
 
         assert token == "test-token-123"
         callback.assert_called_once_with("test-token-123")
 
-    def test_get_token_failure(self, mock_requests):
-        """Test token retrieval failure."""
-        mock_requests.post.return_value.text = '{"error": "Failed"}'
-
-        device = SnapmakerDevice("192.168.1.100")
-        token = device._get_token()
-
-        assert token is None
-
-    def test_get_token_no_token_in_response(self, mock_requests):
-        """Test token retrieval when no token in response."""
-        mock_requests.post.return_value.text = "{}"
-
-        device = SnapmakerDevice("192.168.1.100")
-        token = device._get_token()
-
-        assert token is None
-
-    def test_get_token_http_500_sets_unsupported_protocol_reason(self, mock_requests):
-        """Test that an HTTP 500 on connect (e.g. Artisan/J1) is flagged as unsupported firmware."""
-        error_response = MagicMock(status_code=500, text="null object reference")
-        error_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            response=error_response
-        )
-        mock_requests.post.return_value = error_response
-
-        device = SnapmakerDevice("192.168.1.100")
-        token = device._get_token()
-
-        assert token is None
-        assert device.unsupported_protocol_reason is not None
-
-    def test_get_token_non_json_connect_response_sets_unsupported_protocol_reason(
-        self, mock_requests
-    ):
-        """Test that a non-JSON connect response is flagged as unsupported firmware."""
-        mock_requests.post.return_value.text = "<html>not json</html>"
-
-        device = SnapmakerDevice("192.168.1.100")
-        token = device._get_token()
-
-        assert token is None
-        assert device.unsupported_protocol_reason is not None
-
-    def test_get_token_normal_failure_leaves_unsupported_protocol_reason_unset(
+    def test_generate_token_normal_failure_leaves_unsupported_protocol_reason_unset(
         self, mock_requests
     ):
         """Test a plain auth failure (no token in response) is not flagged as unsupported."""
         mock_requests.post.return_value.text = "{}"
 
         device = SnapmakerDevice("192.168.1.100")
-        token = device._get_token()
+        token = device.generate_token(max_attempts=1)
 
         assert token is None
         assert device.unsupported_protocol_reason is None
@@ -204,6 +153,58 @@ class TestSnapmakerDevice:
         assert device.data["progress"] == 50.0
         assert device.data["elapsed_time"] == "0:05:00"
         assert device.data["remaining_time"] == "0:05:00"
+
+    def test_get_status_snapmaker2_idle_response(self, mock_requests):
+        """Parse an idle A350 response (firmware 1.x): "homed" and "moduleList".
+
+        Shape captured from a real Snapmaker 2.0 A350; the module flags are
+        switched on here so the nested lookup is actually exercised.
+        """
+        mock_requests.get.return_value.text = """{
+            "status": "IDLE",
+            "x": -19, "y": 354, "z": 325.089,
+            "offsetX": 0, "offsetY": 0, "offsetZ": 0,
+            "homed": true,
+            "toolHead": "TOOLHEAD_3DPRINTING_1",
+            "nozzleTemperature": 31, "nozzleTargetTemperature": 0,
+            "heatedBedTemperature": 27, "heatedBedTargetTemperature": 0,
+            "isFilamentOut": false,
+            "workSpeed": 3000,
+            "printStatus": "Complete",
+            "moduleList": {
+                "enclosure": true,
+                "rotaryModule": false,
+                "emergencyStopButton": true,
+                "airPurifier": false
+            }
+        }"""
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token-123"
+        device._available = True
+        device._get_status()
+
+        assert device.data["nozzle_temperature"] == 31
+        assert device.data["heated_bed_temperature"] == 27
+        assert device.data["x"] == -19
+        assert device.data["homing"] == "Homed"
+        assert device.data["has_enclosure"] is True
+        assert device.data["has_rotary_module"] is False
+        assert device.data["has_emergency_stop"] is True
+        assert device.data["has_air_purifier"] is False
+
+    def test_get_status_module_list_not_a_dict(self, mock_requests):
+        """An unexpected moduleList shape must not take the device offline."""
+        mock_requests.get.return_value.text = (
+            '{"status": "IDLE", "nozzleTemperature": 30, "moduleList": ["enclosure"]}'
+        )
+        device = SnapmakerDevice("192.168.1.100")
+        device._token = "test-token-123"
+        device._available = True
+        device._get_status()
+
+        assert device.available is True
+        assert device.data["nozzle_temperature"] == 30
+        assert device.data["has_enclosure"] is False
 
     def test_get_status_additional_fields(self, mock_requests):
         """Test that additional fields are parsed from API response."""
@@ -495,8 +496,12 @@ class TestSnapmakerDevice:
             assert device.available is False
             assert device.status == "OFFLINE"
 
-    def test_get_status_401_clears_token_and_sets_offline(self):
-        """Test that a 401 response sets token_invalid flag and sets device offline."""
+    def test_get_status_401_drops_session_and_sets_offline(self):
+        """Test that a 401 response drops the session and sets device offline.
+
+        A 401 from status means the session expired, not that the token is
+        bad, so it must not set token_invalid by itself.
+        """
         with patch("custom_components.snapmaker.snapmaker.requests") as mock_req:
             # Use the real HTTPError class so except clause can catch it
             mock_req.exceptions.HTTPError = requests.exceptions.HTTPError
@@ -510,11 +515,12 @@ class TestSnapmakerDevice:
             device = SnapmakerDevice("192.168.1.100")
             device._token = "test-token-123"
             device._available = True
-            device._get_status()
+            device._connected = True
+            assert device._get_status() == 401
 
-            # Token should remain but token_invalid flag should be set, device should be offline
             assert device._token == "test-token-123"
-            assert device._token_invalid is True
+            assert device._token_invalid is False
+            assert device._connected is False
             assert device._available is False
             assert device.status == "OFFLINE"
 
@@ -821,7 +827,7 @@ class TestTokenPersistence:
         device = SnapmakerDevice("192.168.1.100")
         device.set_token_update_callback(callback)
 
-        device._get_token()
+        device.generate_token(max_attempts=1)
 
         callback.assert_not_called()
 
@@ -914,7 +920,7 @@ class TestTokenCallbackEdgeCases:
         device.set_token_update_callback(counting_callback)
 
         # First call - should invoke callback
-        device._get_token()
+        device.generate_token(max_attempts=1)
         assert call_count == 1
         assert received_tokens == ["test-token-123"]
 
@@ -926,7 +932,7 @@ class TestTokenCallbackEdgeCases:
         device = SnapmakerDevice("192.168.1.100")
         device.set_token_update_callback(callback)
 
-        device._get_token()
+        device.generate_token(max_attempts=1)
         callback.assert_not_called()
 
 
@@ -1066,7 +1072,7 @@ class TestTokenReconnect:
         assert result is False
 
     def test_connect_with_token_request_exception(self, mock_requests):
-        """Test reconnect fails gracefully on network error."""
+        """Test a network error is a transient failure, not a rejection."""
         mock_requests.post.side_effect = mock_requests.exceptions.RequestException(
             "Connection refused"
         )
@@ -1074,7 +1080,7 @@ class TestTokenReconnect:
         device = SnapmakerDevice("192.168.1.100")
         result = device._connect_with_token("test-token-123")
 
-        assert result is False
+        assert result is None
 
     def test_update_reconnects_with_existing_token(self, mock_socket, mock_requests):
         """Test that update() POSTs to reconnect on first poll with a saved token."""
@@ -1135,15 +1141,115 @@ class TestTokenReconnect:
         # Status GET must NOT be called after a failed reconnect
         assert mock_requests.get.call_count == 0
 
-    def test_update_without_token_skips_reconnect(self, mock_socket, mock_requests):
-        """Test that update() uses generate flow when no token is present."""
+    def test_update_reconnects_when_session_expired(self, mock_socket, mock_requests):
+        """A 401 between polls reconnects on the same token (issue #18).
+
+        The device drops an idle session after 10-20 s, so with a 30 s poll
+        interval every poll finds it expired. That must not trigger reauth.
+        """
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device.update()  # first poll connects
+        mock_requests.reset_mock()
+
+        ok = mock_requests.get.return_value
+        mock_requests.get.side_effect = [MagicMock(status_code=401, text=""), ok]
+        device.update()
+
+        assert mock_requests.post.call_count == 1  # reconnect POST
+        assert mock_requests.get.call_count == 2  # expired, then fresh status
+        assert device.token_invalid is False
+        assert device.available is True
+        assert device._connected is True
+        assert device.status == "IDLE"
+
+    def test_update_reconnect_clears_token_invalid(self, mock_socket, mock_requests):
+        """A successful reconnect clears a stale token_invalid so entities recover."""
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device._token_invalid = True
+
+        device.update()
+
+        assert device.token_invalid is False
+        assert device.available is True
+
+    def test_update_busy_reconnect_is_transient(self, mock_socket, mock_requests):
+        """A 403 on reconnect (another client pairing) fails one poll, no reauth."""
+        busy = MagicMock(status_code=403, text="Failed to connect")
+        busy.raise_for_status.side_effect = requests.exceptions.HTTPError(response=busy)
+        mock_requests.post.return_value = busy
+
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device.update()
+
+        assert device.token_invalid is False
+        assert device.available is False
+        assert mock_requests.get.call_count == 0
+
+    @staticmethod
+    def _busy_response():
+        busy = MagicMock(status_code=403, text="Failed to connect")
+        busy.raise_for_status.side_effect = requests.exceptions.HTTPError(response=busy)
+        return busy
+
+    def test_update_persistent_403_requests_reauth(self, mock_socket, mock_requests):
+        """A 403 that never clears means the token is no longer accepted.
+
+        Without this, a device that keeps refusing the saved token would leave
+        every entity unavailable with no reauth prompt.
+        """
+        mock_requests.post.return_value = self._busy_response()
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+
+        for _ in range(BUSY_REAUTH_POLLS - 1):
+            device.update()
+            assert device.token_invalid is False
+        device.update()
+
+        assert device.token_invalid is True
+        assert mock_requests.get.call_count == 0
+
+    def test_update_403_streak_resets_on_success(self, mock_socket, mock_requests):
+        """Occasional collisions spread over time never add up to a reauth."""
+        ok = mock_requests.post.return_value
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+
+        for _ in range(2):
+            mock_requests.post.return_value = self._busy_response()
+            for _ in range(BUSY_REAUTH_POLLS - 1):
+                device.update()
+            mock_requests.post.return_value = ok
+            device.update()  # reconnect succeeds, streak resets
+            device._connected = False  # next poll reconnects again
+
+        assert device.token_invalid is False
+        assert device._busy_polls == 0
+
+    def test_update_401_after_reconnect_marks_token_invalid(
+        self, mock_socket, mock_requests
+    ):
+        """If status still answers 401 right after a reconnect, the token is bad."""
+        mock_requests.get.return_value = MagicMock(status_code=401, text="")
+
+        device = SnapmakerDevice("192.168.1.100", token="test-token-123")
+        device.update()
+
+        assert mock_requests.post.call_count == 1
+        assert device.token_invalid is True
+
+    def test_update_without_token_requests_reauth(self, mock_socket, mock_requests):
+        """update() never pairs in the background; with no token it asks for reauth.
+
+        Requesting a token from the poll loop leaves an approval request
+        pending on the printer every 30 s, and the printer then refuses other
+        clients (Luban, other tools) with 403 until it is answered.
+        """
         device = SnapmakerDevice("192.168.1.100")
         device.update()
 
-        # Two POSTs for _get_token() (request + validate), zero for reconnect
-        assert mock_requests.post.call_count == 2
-        assert mock_requests.get.call_count == 1
-        assert device.data["tool_head"] == "Extruder"
+        assert mock_requests.post.call_count == 0
+        assert mock_requests.get.call_count == 0
+        assert device.token_invalid is True
+        assert device.available is False
 
     def test_generate_token_http_500_sets_unsupported_protocol_reason(
         self, mock_requests
@@ -1180,6 +1286,56 @@ class TestTokenReconnect:
 
         assert token == "test-token-123"
         assert device._connected is True
+
+    def test_generate_token_waits_for_touchscreen_approval(self, mock_requests):
+        """generate_token() keeps polling status while it answers 204 (issue #18).
+
+        The connect POST returns a token before the user approves it, so the
+        token alone is not proof of approval; status answers 204 until the
+        user taps Authorize.
+        """
+        pending = MagicMock(status_code=204, text="")
+        approved = mock_requests.get.return_value
+        mock_requests.get.side_effect = [pending, pending, approved]
+
+        device = SnapmakerDevice("192.168.1.100")
+        with patch("custom_components.snapmaker.snapmaker.time.sleep") as mock_sleep:
+            token = device.generate_token(max_attempts=5, poll_interval=2)
+
+        assert token == "test-token-123"
+        assert device.token == "test-token-123"
+        assert device._connected is True
+        assert mock_requests.get.call_count == 3
+        assert mock_sleep.call_args_list == [call(2), call(2)]
+        # A single connect POST; re-posting could raise a second prompt
+        assert mock_requests.post.call_count == 1
+
+    def test_generate_token_rejected_returns_none(self, mock_requests):
+        """generate_token() stops polling as soon as status answers 401."""
+        mock_requests.get.return_value = MagicMock(status_code=401, text="")
+
+        device = SnapmakerDevice("192.168.1.100")
+        with patch("custom_components.snapmaker.snapmaker.time.sleep"):
+            token = device.generate_token(max_attempts=5)
+
+        assert token is None
+        assert device.token is None
+        assert device._connected is False
+        assert mock_requests.get.call_count == 1
+
+    def test_generate_token_timeout_withdraws_request(self, mock_requests):
+        """generate_token() disconnects if the prompt is never approved."""
+        mock_requests.get.return_value = MagicMock(status_code=204, text="")
+
+        device = SnapmakerDevice("192.168.1.100")
+        with patch("custom_components.snapmaker.snapmaker.time.sleep"):
+            token = device.generate_token(max_attempts=3)
+
+        assert token is None
+        assert device._connected is False
+        assert mock_requests.get.call_count == 3
+        disconnect_url = mock_requests.post.call_args_list[-1].args[0]
+        assert disconnect_url.endswith("/api/v1/disconnect")
 
     def test_update_after_generate_token_skips_reconnect_post(
         self, mock_socket, mock_requests

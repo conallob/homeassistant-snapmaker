@@ -7,6 +7,7 @@ from typing import Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -99,7 +100,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class SnapmakerSensorBase(CoordinatorEntity):
+class SnapmakerSensorBase(CoordinatorEntity, SensorEntity):
     """Base class for Snapmaker sensors."""
 
     def __init__(self, coordinator, device):
@@ -139,7 +140,7 @@ class SnapmakerStatusSensor(SnapmakerSensorBase):
         self._attr_icon = "mdi:printer-3d"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.status
 
@@ -313,7 +314,7 @@ class SnapmakerFileNameSensor(SnapmakerSensorBase):
         self._attr_icon = "mdi:file-document"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("file_name", "N/A")
 
@@ -344,11 +345,10 @@ class SnapmakerElapsedTimeSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Elapsed Time"
         self._attr_unique_id = f"{self._device.host}_elapsed_time"
-        self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_icon = "mdi:clock-outline"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("elapsed_time", "00:00:00")
 
@@ -361,11 +361,10 @@ class SnapmakerRemainingTimeSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Remaining Time"
         self._attr_unique_id = f"{self._device.host}_remaining_time"
-        self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_icon = "mdi:clock-end"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("remaining_time", "00:00:00")
 
@@ -378,11 +377,10 @@ class SnapmakerEstimatedTimeSensor(SnapmakerSensorBase):
         super().__init__(coordinator, device)
         self._attr_name = "Estimated Time"
         self._attr_unique_id = f"{self._device.host}_estimated_time"
-        self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_icon = "mdi:clock-start"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("estimated_time", "00:00:00")
 
@@ -435,7 +433,7 @@ class SnapmakerToolHeadSensor(SnapmakerSensorBase):
         self._attr_icon = "mdi:toolbox"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("tool_head", "N/A")
 
@@ -505,7 +503,7 @@ class SnapmakerHomingSensor(SnapmakerSensorBase):
         self._attr_icon = "mdi:home-import-outline"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the state of the sensor."""
         return self._device.data.get("homing", "N/A")
 
@@ -585,7 +583,7 @@ class SnapmakerDiagnosticSensor(SnapmakerSensorBase):
         self._attr_icon = "mdi:api"
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the device status as the primary state."""
         return self._device.status
 

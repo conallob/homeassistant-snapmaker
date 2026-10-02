@@ -624,3 +624,27 @@ class TestSensorEntities:
             mock_coordinator, mock_snapmaker_device.return_value
         )
         assert tool_sensor.state == "N/A"
+
+
+def test_all_sensors_are_sensor_entities():
+    """Every sensor must be a SensorEntity that reports through native_value.
+
+    Without the SensorEntity base, Home Assistant never calls native_value,
+    so every numeric sensor (temperatures, progress, position, line counts)
+    reads "unknown" and loses its unit.
+    """
+    from homeassistant.components.sensor import SensorEntity
+
+    from custom_components.snapmaker import sensor as sensor_module
+
+    sensor_classes = [
+        cls
+        for cls in vars(sensor_module).values()
+        if isinstance(cls, type)
+        and issubclass(cls, sensor_module.SnapmakerSensorBase)
+        and cls is not sensor_module.SnapmakerSensorBase
+    ]
+    assert sensor_classes
+    for cls in sensor_classes:
+        assert issubclass(cls, SensorEntity), cls.__name__
+        assert "state" not in vars(cls), f"{cls.__name__} overrides state"

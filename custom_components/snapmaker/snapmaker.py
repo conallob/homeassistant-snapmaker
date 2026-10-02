@@ -33,6 +33,11 @@ REACHABILITY_BACKOFF_BASE = 1
 # right after token generation succeeds.
 STATUS_EMPTY_RETRY_COUNT = 3
 STATUS_EMPTY_RETRY_DELAY = 1.0  # Seconds between empty-response retries
+# The device answers 403 to every connect while another client's connect or
+# touchscreen approval is pending. A collision clears within a poll; a 403 that
+# persists this many polls in a row (~5 min) means the device no longer accepts
+# our token, so it is treated as rejected and reauth is requested.
+BUSY_REAUTH_POLLS = 10
 
 # Keys to strip from the raw API response before exposing as diagnostic attributes
 SENSITIVE_API_KEYS = {"token"}
@@ -66,6 +71,7 @@ class SnapmakerDevice:
         self._connected = (
             False  # True once _connect_with_token() succeeds; reset on offline/401
         )
+        self._busy_polls = 0  # consecutive reconnects refused with 403
 
     @property
     def host(self) -> str:
@@ -239,13 +245,18 @@ class SnapmakerDevice:
         self._check_online()  # best-effort: populates self._model if UDP works
         return self._check_reachable()
 
-    def _connect_with_token(self, token: str) -> bool:
+    def _connect_with_token(self, token: str) -> Optional[bool]:
         """Reconnect to the device using an existing known token.
 
         The Snapmaker requires a POST to /api/v1/connect with the saved token
         to re-establish the session before status can be polled. Without this,
         the device returns 401 on every status request even with a valid token.
         This mirrors how Luban reconnects on startup.
+
+        Returns:
+            True if the device accepted the token, False if it rejected it,
+            None if the attempt failed for a transient reason (network error,
+            or HTTP 403 while another client is waiting on the touchscreen).
         """
         try:
             url = f"http://{self._host}:{API_PORT}/api/v1/connect"
@@ -255,6 +266,21 @@ class SnapmakerDevice:
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=API_TIMEOUT,
             )
+            if response.status_code == 401:
+                _LOGGER.warning("Token reconnect rejected by device %s", self._host)
+                return False
+            if response.status_code == 403:
+                self._busy_polls += 1
+                if self._busy_polls >= BUSY_REAUTH_POLLS:
+                    _LOGGER.warning(
+                        "Device %s has refused the saved token with 403 for %d "
+                        "polls in a row; treating it as rejected",
+                        self._host,
+                        self._busy_polls,
+                    )
+                    return False
+            else:
+                self._busy_polls = 0
             response.raise_for_status()
             try:
                 data = json.loads(response.text)
@@ -266,8 +292,36 @@ class SnapmakerDevice:
             _LOGGER.warning("Token reconnect rejected by device %s", self._host)
             return False
         except requests.exceptions.RequestException as err:
-            _LOGGER.error("Error reconnecting with token to %s: %s", self._host, err)
-            return False
+            _LOGGER.warning(
+                "Could not reconnect to %s, will retry on the next poll: %s",
+                self._host,
+                err,
+            )
+            return None
+
+    def _reconnect(self) -> bool:
+        """Reopen the session on the saved token. Returns True on success.
+
+        Only a device that rejects the token marks it invalid (triggering
+        reauth); a transient failure just fails this poll. A successful
+        reconnect clears token_invalid so the coordinator recovers.
+        """
+        result = self._connect_with_token(self._token)
+        if result:
+            self._connected = True
+            self._available = True
+            self._token_invalid = False
+            return True
+        if result is False:
+            _LOGGER.warning(
+                "Failed to reconnect with saved token for %s, "
+                "token may have been invalidated",
+                self._host,
+            )
+            self._token_invalid = True
+        self._available = False
+        self._status = "OFFLINE"
+        return False
 
     def update(self) -> Dict[str, Any]:
         """Update device data."""
@@ -297,29 +351,32 @@ class SnapmakerDevice:
         self._available = True
 
         if self._token:
-            if not self._connected:
-                # Reconnect with existing token. Required after HA startup
-                # (loading a saved token) or when the device reboots and the
-                # session is lost. _connected is reset to False by _set_offline()
-                # and on 401, so this POST only fires when actually needed.
-                # This path reuses an already-trusted token silently, with no
-                # touchscreen dialog to dismiss, so it doesn't need the
-                # settle-retry protection that follows a fresh handshake.
-                if not self._connect_with_token(self._token):
-                    _LOGGER.warning(
-                        "Failed to reconnect with saved token for %s, "
-                        "token may have been invalidated",
-                        self._host,
-                    )
-                    self._token_invalid = True
-                    return self._data
-                self._connected = True
-        else:
-            self._token = self._get_token()
+            if self._connected and self._get_status() != 401:
+                return self._data
+            # No session yet (HA startup, or the device came back online), or
+            # it expired between polls: the device drops an idle session after
+            # 10-20 s, well inside the 30 s poll interval, and answers 401
+            # until the token reconnects. Reopen it on the saved token and
+            # poll again. This reuses an already-trusted token silently, with
+            # no touchscreen dialog to dismiss, so it doesn't need the
+            # settle-retry protection that follows a fresh handshake.
+            if self._reconnect() and self._get_status() == 401:
+                _LOGGER.error(
+                    "Device %s still answers 401 after reconnecting with the "
+                    "saved token",
+                    self._host,
+                )
+                self._token_invalid = True
+            return self._data
 
-        if self._token:
-            self._get_status()
-
+        # No saved token. Pairing needs the user at the touchscreen, so it only
+        # happens in the config flow (generate_token()). Requesting a token
+        # here would leave an approval request pending on the printer every
+        # poll, which also makes it refuse other clients with 403.
+        _LOGGER.error("No saved token for %s; reauthorize the integration", self._host)
+        self._token_invalid = True
+        self._available = False
+        self._status = "OFFLINE"
         return self._data
 
     def _set_offline(self) -> None:
@@ -477,23 +534,25 @@ class SnapmakerDevice:
             udp_socket.close()
 
     def generate_token(
-        self, max_attempts: int = 18, poll_interval: int = 10
+        self, max_attempts: int = 90, poll_interval: int = 2
     ) -> Optional[str]:
         """Generate a new authentication token from Snapmaker device.
 
-        This method implements a polling mechanism similar to the reference implementations.
-        The user must approve the connection on the Snapmaker touchscreen before the
-        token can be validated.
+        The device hands out a token on the first /api/v1/connect POST, before
+        anyone has approved it. Approval is only visible on /api/v1/status,
+        which answers 204 with an empty body while the touchscreen prompt is
+        pending, 200 with the status JSON once the user taps Authorize, and 401
+        if the token is rejected. This mirrors how Luban pairs.
 
         IMPORTANT: This method blocks the executor thread for up to
         (max_attempts * poll_interval) seconds. Default settings can block
-        for up to 3 minutes (18 × 10s), which may impact the thread pool's
+        for up to 3 minutes (90 × 2s), which may impact the thread pool's
         ability to handle other tasks. Consider the thread pool size when
         calling this method.
 
         Args:
-            max_attempts: Maximum number of polling attempts (default 18 = 3 minutes)
-            poll_interval: Seconds to wait between polling attempts (default 10)
+            max_attempts: Maximum number of status polls (default 90 = 3 minutes)
+            poll_interval: Seconds to wait between status polls (default 2)
 
         Returns:
             Optional[str]: Authentication token if successful, None otherwise
@@ -538,52 +597,50 @@ class SnapmakerDevice:
                 "Token received, waiting for user authorization on touchscreen..."
             )
 
-            # Poll until user authorizes on touchscreen
-            headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            form_data = {"token": token}
-
-            # Poll for user authorization on touchscreen
+            # Poll status until the user authorizes on the touchscreen.
             # First attempt is immediate (no sleep), subsequent attempts wait poll_interval
+            status_url = f"http://{self._host}:{API_PORT}/api/v1/status"
             for attempt in range(max_attempts):
                 try:
-                    # Wait before attempting validation (skip on first attempt to try immediately)
                     if attempt > 0:
                         # Blocking sleep in executor thread - this is acceptable as it runs
                         # in a separate thread pool, not blocking the event loop
                         time.sleep(poll_interval)
 
-                    # Try to validate token by posting it back to the device
-                    response = requests.post(
-                        url, data=form_data, headers=headers, timeout=API_TIMEOUT
+                    response = requests.get(
+                        status_url, params={"token": token}, timeout=API_TIMEOUT
                     )
 
-                    # Check HTTP status before parsing response
-                    response.raise_for_status()
+                    if response.status_code == 401:
+                        _LOGGER.error(
+                            "Snapmaker at %s rejected the token (401)", self._host
+                        )
+                        return None
 
-                    # Check if token was validated by Snapmaker
-                    # Per Snapmaker API spec, a successful validation echoes back the same token
-                    try:
-                        response_data = json.loads(response.text)
-                        if response_data.get("token") == token:
-                            _LOGGER.info("Token validated successfully")
-                            self._token = token
-                            self._token_invalid = False
-                            # Session is now established; next update() can skip
-                            # the reconnect POST and go straight to _get_status().
-                            self._connected = True
-                            self._settle_retries_pending = True
-                            # Notify callback about new token for persistence
-                            if self._on_token_update:
-                                self._on_token_update(token)
-                            return token
-                    except (json.JSONDecodeError, ValueError) as json_err:
+                    # 204 / empty body: the approval prompt is still on screen
+                    if response.status_code == 204 or not (
+                        response.text and response.text.strip()
+                    ):
                         _LOGGER.debug(
-                            "Token validation attempt %d/%d: %s",
+                            "Awaiting touchscreen approval (attempt %d/%d)",
                             attempt + 1,
                             max_attempts,
-                            json_err,
                         )
                         continue
+
+                    response.raise_for_status()
+
+                    _LOGGER.info("Token approved on touchscreen")
+                    self._token = token
+                    self._token_invalid = False
+                    # Session is now established; next update() can skip
+                    # the reconnect POST and go straight to _get_status().
+                    self._connected = True
+                    self._settle_retries_pending = True
+                    # Notify callback about new token for persistence
+                    if self._on_token_update:
+                        self._on_token_update(token)
+                    return token
 
                 except requests.exceptions.RequestException as req_err:
                     _LOGGER.debug(
@@ -595,10 +652,21 @@ class SnapmakerDevice:
                     continue
 
             _LOGGER.warning(
-                "Token validation failed after %d attempts. "
-                "User may not have authorized on touchscreen.",
+                "Token not approved after %d attempts. "
+                "User may not have authorized on touchscreen. Note that the "
+                "prompt only appears while the touchscreen is on its home screen.",
                 max_attempts,
             )
+            # Withdraw the request so the prompt doesn't linger on the screen
+            try:
+                requests.post(
+                    f"http://{self._host}:{API_PORT}/api/v1/disconnect",
+                    data={"token": token},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=API_TIMEOUT,
+                )
+            except requests.exceptions.RequestException:
+                pass
             return None
 
         except requests.exceptions.RequestException as req_err:
@@ -608,99 +676,12 @@ class SnapmakerDevice:
             _LOGGER.error("Unexpected error generating token: %s", err)
             return None
 
-    def _get_token(self) -> Optional[str]:
-        """Get authentication token from Snapmaker device without polling.
+    def _get_status(self) -> Optional[int]:
+        """Get status from Snapmaker device.
 
-        This is a simplified, non-polling version used during routine updates
-        when the device has already been approved on the touchscreen. It attempts
-        immediate token validation without the multi-attempt polling loop.
-
-        For initial setup or reauth flows, use generate_token() instead, which
-        implements the polling mechanism required for user authorization.
-
-        Implements a two-step token acquisition process:
-        1. POST to /api/v1/connect to request a token
-        2. POST the received token back to validate it (no retry loop)
-
-        Use Cases:
-        - Called from update() when no token exists but device is online
-        - Assumes previous authorization or immediate approval
-        - Will fail if user hasn't pre-approved on touchscreen
-
-        Returns:
-            Optional[str]: Authentication token if successful, None otherwise
+        Returns 401 if the device no longer recognises the session, so the
+        caller can reconnect; None otherwise.
         """
-        # Reset token invalid flag at start to ensure clean state
-        self._token_invalid = False
-        self._unsupported_protocol_reason = None
-
-        try:
-            url = f"http://{self._host}:{API_PORT}/api/v1/connect"
-
-            # First request to initiate connection
-            response = requests.post(url, timeout=API_TIMEOUT)
-
-            # Check HTTP status before parsing response
-            try:
-                response.raise_for_status()
-            except requests.exceptions.HTTPError as http_err:
-                _LOGGER.error(
-                    "HTTP error requesting token: %s. Response: %s",
-                    http_err,
-                    response.text[:200],
-                )
-                self._classify_connect_failure(response)
-                return None
-
-            # Extract token from response
-            try:
-                token = json.loads(response.text).get("token")
-            except (json.JSONDecodeError, ValueError) as json_err:
-                _LOGGER.error(
-                    "Failed to parse token response: %s. Response: %s",
-                    json_err,
-                    response.text[:200],
-                )
-                self._mark_non_json_connect_response()
-                return None
-
-            if not token:
-                _LOGGER.error("No token received from Snapmaker")
-                return None
-
-            # Second request to validate token
-            headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            form_data = {"token": token}
-            response = requests.post(
-                url, data=form_data, headers=headers, timeout=API_TIMEOUT
-            )
-
-            # Validate token response with JSON error handling
-            try:
-                response_data = json.loads(response.text)
-                if response_data.get("token") == token:
-                    _LOGGER.info("Successfully connected to Snapmaker")
-                    self._token_invalid = False
-                    self._settle_retries_pending = True
-                    # Notify callback about new token for persistence
-                    if self._on_token_update:
-                        self._on_token_update(token)
-                    return token
-            except (json.JSONDecodeError, ValueError) as json_err:
-                _LOGGER.error("Failed to parse token validation response: %s", json_err)
-                return None
-
-            _LOGGER.error("Token validation failed")
-            return None
-        except requests.exceptions.RequestException as req_err:
-            _LOGGER.error("Network error getting token from Snapmaker: %s", req_err)
-            return None
-        except Exception as err:
-            _LOGGER.error("Unexpected error getting token from Snapmaker: %s", err)
-            return None
-
-    def _get_status(self) -> None:
-        """Get status from Snapmaker device."""
         try:
             url = f"http://{self._host}:{API_PORT}/api/v1/status"
 
@@ -734,12 +715,11 @@ class SnapmakerDevice:
 
             # Check for authentication errors
             if response.status_code == 401:
-                _LOGGER.error("Token authentication failed (401 Unauthorized)")
-                self._token_invalid = True
-                self._connected = False  # Force reconnect attempt on next poll
+                _LOGGER.debug("Status answered 401: session expired for %s", self._host)
+                self._connected = False  # Force a reconnect POST
                 self._available = False
                 self._status = "OFFLINE"
-                return
+                return 401
 
             # Check if response is valid
             if not response.text or response.text.strip() == "":
@@ -868,15 +848,31 @@ class SnapmakerDevice:
             x = data.get("x", 0)
             y = data.get("y", 0)
             z = data.get("z", 0)
-            homing = data.get("homing", "N/A")
+            # Snapmaker 2.0 firmware reports a boolean "homed" rather than a
+            # "homing" axis string
+            homing = data.get("homing")
+            if homing is None:
+                homed = data.get("homed")
+                homing = "N/A" if homed is None else ("Homed" if homed else "Not homed")
 
-            # Extract module/safety data
+            # Extract module/safety data. Snapmaker 2.0 firmware nests the
+            # module flags under "moduleList" and names the emergency stop
+            # "emergencyStopButton"; fall back to top-level keys otherwise.
             is_filament_out = data.get("isFilamentOut", False)
             is_door_open = data.get("isDoorOpen", False)
-            has_enclosure = data.get("enclosure", False)
-            has_rotary_module = data.get("rotaryModule", False)
-            has_emergency_stop = data.get("emergencyStop", False)
-            has_air_purifier = data.get("airPurifier", False)
+            modules = data.get("moduleList")
+            if not isinstance(modules, dict):
+                modules = {}
+            has_enclosure = modules.get("enclosure", data.get("enclosure", False))
+            has_rotary_module = modules.get(
+                "rotaryModule", data.get("rotaryModule", False)
+            )
+            has_emergency_stop = modules.get(
+                "emergencyStopButton", data.get("emergencyStop", False)
+            )
+            has_air_purifier = modules.get(
+                "airPurifier", data.get("airPurifier", False)
+            )
 
             # Extract G-code line progress
             total_lines = data.get("totalLines", 0)
